@@ -132,6 +132,7 @@ class PedidoOut(PedidoBase):
 
     id: int
     uuid: str
+    mesa_numero: int | None = None
     created_at: datetime
     updated_at: datetime
     origem: str | None = None

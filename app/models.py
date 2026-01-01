@@ -78,6 +78,15 @@ class Pedido(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def mesa_numero(self) -> int | None:
+        try:
+            if getattr(self, "mesa", None) is not None:
+                return int(self.mesa.numero)
+        except Exception:
+            return None
+        return None
+
 
 class ItemPedido(Base):
     __tablename__ = "itens_pedido"

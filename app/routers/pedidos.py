@@ -19,7 +19,7 @@ def listar_pedidos(
     limit: int | None = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(models.Pedido).options(joinedload(models.Pedido.itens))
+    q = db.query(models.Pedido).options(joinedload(models.Pedido.itens), joinedload(models.Pedido.mesa))
 
     if abertos is True:
         q = q.filter(models.Pedido.data_fechamento.is_(None))
@@ -48,7 +48,7 @@ def listar_pedidos(
 def obter_pedido(pedido_id: int, db: Session = Depends(get_db)):
     pedido = (
         db.query(models.Pedido)
-        .options(joinedload(models.Pedido.itens))
+        .options(joinedload(models.Pedido.itens), joinedload(models.Pedido.mesa))
         .filter(models.Pedido.id == pedido_id)
         .first()
     )

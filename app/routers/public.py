@@ -20,7 +20,7 @@ def menu_produtos(
     query = db.query(models.Produto).filter(models.Produto.ativo.is_(True))
 
     if somente_disponiveis:
-        query = query.filter(models.Produto.estoque > 0)
+        query = query.filter(models.Produto.estoque > 1)
 
     if q:
         like = f"%{q.strip()}%"

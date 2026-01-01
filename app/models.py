@@ -63,6 +63,8 @@ class Pedido(Base):
 
     observacao_cozinha: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    origem: Mapped[str] = mapped_column(String(20), default="pdv")
+
     data_inicio: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     data_fechamento: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

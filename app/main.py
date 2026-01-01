@@ -57,6 +57,9 @@ def on_startup():
             )
         )
 
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS origem VARCHAR(20)"))
+        conn.execute(text("UPDATE pedidos SET origem = 'pdv' WHERE origem IS NULL OR origem = ''"))
+
         conn.execute(text("ALTER TABLE itens_pedido ADD COLUMN IF NOT EXISTS uuid VARCHAR(64)"))
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_itens_pedido_uuid ON itens_pedido (uuid)"))
         conn.execute(

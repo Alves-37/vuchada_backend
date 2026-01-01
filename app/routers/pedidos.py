@@ -14,6 +14,9 @@ router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 def listar_pedidos(
     abertos: bool | None = None,
     mesa_id: int | None = None,
+    origem: str | None = None,
+    since_id: int | None = None,
+    limit: int | None = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(models.Pedido).options(joinedload(models.Pedido.itens))
@@ -26,7 +29,19 @@ def listar_pedidos(
     if mesa_id is not None:
         q = q.filter(models.Pedido.mesa_id == mesa_id)
 
-    return q.order_by(models.Pedido.id.desc()).all()
+    if origem is not None:
+        q = q.filter(models.Pedido.origem == origem)
+
+    if since_id is not None:
+        q = q.filter(models.Pedido.id > since_id)
+
+    q = q.order_by(models.Pedido.id.desc())
+
+    if limit is not None:
+        limit = max(1, min(int(limit), 500))
+        q = q.limit(limit)
+
+    return q.all()
 
 
 @router.get("/{pedido_id}", response_model=schemas.PedidoOut)
@@ -58,6 +73,7 @@ def criar_pedido(payload: schemas.PedidoCreate, db: Session = Depends(get_db)):
         valor_recebido=payload.valor_recebido,
         troco=payload.troco,
         observacao_cozinha=payload.observacao_cozinha,
+        origem="pdv",
         data_inicio=payload.data_inicio or datetime.utcnow(),
         data_fechamento=payload.data_fechamento,
     )

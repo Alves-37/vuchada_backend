@@ -134,6 +134,7 @@ class PedidoOut(PedidoBase):
     uuid: str
     created_at: datetime
     updated_at: datetime
+    origem: str | None = None
     itens: list[ItemPedidoOut] = []
 
 

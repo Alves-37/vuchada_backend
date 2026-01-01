@@ -72,6 +72,7 @@ def criar_pedido_publico(
             valor_recebido=0,
             troco=0,
             observacao_cozinha=payload.observacao_cozinha,
+            origem="online",
             data_inicio=datetime.utcnow(),
             data_fechamento=None,
         )

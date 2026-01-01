@@ -165,7 +165,7 @@ def push(payload: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/pull")
-def pull(since: str | None = None, db: Session = Depends(get_db)):
+def pull(since: str | None = None, limit: int = 500, db: Session = Depends(get_db)):
     since_dt = _parse_dt(since)
     q = db.query(models.Pedido).options(
         joinedload(models.Pedido.itens).joinedload(models.ItemPedido.produto),
@@ -173,7 +173,8 @@ def pull(since: str | None = None, db: Session = Depends(get_db)):
     )
     if since_dt is not None:
         q = q.filter(models.Pedido.updated_at > since_dt)
-    pedidos = q.order_by(models.Pedido.updated_at.asc()).limit(500).all()
+    limit = max(1, min(int(limit or 500), 500))
+    pedidos = q.order_by(models.Pedido.updated_at.asc()).limit(limit).all()
 
     def serialize(p: models.Pedido):
         return {
@@ -211,7 +212,23 @@ def pull(since: str | None = None, db: Session = Depends(get_db)):
             ],
         }
 
+    next_since = None
+    try:
+        if pedidos:
+            # next_since deve avançar na linha do tempo para permitir paginação
+            max_dt = None
+            for p in pedidos:
+                if getattr(p, "updated_at", None) is None:
+                    continue
+                if max_dt is None or p.updated_at > max_dt:
+                    max_dt = p.updated_at
+            if max_dt is not None:
+                next_since = max_dt.isoformat()
+    except Exception:
+        next_since = None
+
     return {
         "server_now": _utc_now_iso(),
+        "next_since": next_since,
         "pedidos": [serialize(p) for p in pedidos],
     }

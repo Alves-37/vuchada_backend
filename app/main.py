@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,7 +83,7 @@ def health():
 def restaurant_status():
     # Horário local: aberto 07:00 e fecha 24:00 (meia-noite).
     # (Ou seja, aberto a partir de 07:00 inclusive até 23:59.)
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Africa/Maputo"))
     t = now.time()
     open_at = time(7, 0)
     close_at = time(0, 0)

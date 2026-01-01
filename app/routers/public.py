@@ -14,10 +14,10 @@ router = APIRouter(prefix="/public", tags=["public"])
 @router.get("/mesas", response_model=list[schemas.MesaOut])
 def listar_mesas_publicas(db: Session = Depends(get_db)):
     # No online não deve aparecer mesa do sistema/balcão.
-    # Regra atual: mesas com numero <= 1 são reservadas.
+    # Regra atual: mesa com numero 0 é reservada.
     return (
         db.query(models.Mesa)
-        .filter(models.Mesa.numero > 1)
+        .filter(models.Mesa.numero > 0)
         .order_by(models.Mesa.numero.asc())
         .all()
     )

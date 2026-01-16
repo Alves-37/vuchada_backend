@@ -11,11 +11,15 @@ from sqlalchemy.exc import IntegrityError
 from app.db.models import Produto, Venda, ItemVenda, User
 from app.core.realtime import manager as realtime_manager
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
+from ..core.deps import get_tenant_id
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
 
 @router.get("/", response_model=List[VendaResponse])
-async def listar_vendas(db: AsyncSession = Depends(get_db_session)):
+async def listar_vendas(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Lista todas as vendas."""
     try:
         result = await db.execute(
@@ -25,7 +29,7 @@ async def listar_vendas(db: AsyncSession = Depends(get_db_session)):
                 selectinload(Venda.cliente),
                 selectinload(Venda.usuario),
             )
-            .where(Venda.cancelada == False)
+            .where(Venda.cancelada == False, Venda.tenant_id == tenant_id)
         )
         vendas = result.scalars().all()
         # Injetar nome do usuário (vendedor) para o schema incluir
@@ -39,7 +43,11 @@ async def listar_vendas(db: AsyncSession = Depends(get_db_session)):
         raise HTTPException(status_code=500, detail=f"Erro ao listar vendas: {str(e)}")
 
 @router.get("/id/{venda_id}", response_model=VendaResponse)
-async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
+async def obter_venda(
+    venda_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Obtém uma venda específica por UUID."""
     try:
         result = await db.execute(
@@ -49,7 +57,7 @@ async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session))
                 selectinload(Venda.cliente),
                 selectinload(Venda.usuario),
             )
-            .where(Venda.id == venda_id)
+            .where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
         )
         venda = result.scalar_one_or_none()
         
@@ -67,7 +75,11 @@ async def obter_venda(venda_id: str, db: AsyncSession = Depends(get_db_session))
         raise HTTPException(status_code=500, detail=f"Erro ao obter venda: {str(e)}")
 
 @router.post("/", response_model=VendaResponse)
-async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_session)):
+async def criar_venda(
+    venda: VendaCreate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Cria uma nova venda."""
     try:
         # Criar nova venda
@@ -96,6 +108,7 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
 
         nova_venda = Venda(
             id=venda_uuid,
+            tenant_id=tenant_id,
             usuario_id=usuario_uuid,
             cliente_id=cliente_uuid,
             total=venda.total,
@@ -192,11 +205,16 @@ async def criar_venda(venda: VendaCreate, db: AsyncSession = Depends(get_db_sess
         raise HTTPException(status_code=500, detail=f"Erro ao criar venda: {str(e)}")
 
 @router.put("/{venda_id}", response_model=VendaResponse)
-async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = Depends(get_db_session)):
+async def atualizar_venda(
+    venda_id: str,
+    venda: VendaUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Atualiza uma venda existente."""
     try:
         # Buscar venda existente
-        result = await db.execute(select(Venda).where(Venda.id == venda_id))
+        result = await db.execute(select(Venda).where(Venda.id == venda_id, Venda.tenant_id == tenant_id))
         venda_existente = result.scalar_one_or_none()
         
         if not venda_existente:
@@ -230,7 +248,7 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
         
         # IMPORTANTE: passar o dicionário diretamente (chaves são Column)
         await db.execute(
-            update(Venda).where(Venda.id == venda_id).values(update_data)
+            update(Venda).where(Venda.id == venda_id, Venda.tenant_id == tenant_id).values(update_data)
         )
         await db.commit()
         
@@ -238,7 +256,7 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
         result = await db.execute(
             select(Venda)
             .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
-            .where(Venda.id == venda_id)
+            .where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
         )
         venda_atualizada = result.scalar_one()
         try:
@@ -252,11 +270,15 @@ async def atualizar_venda(venda_id: str, venda: VendaUpdate, db: AsyncSession = 
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar venda: {str(e)}")
 
 @router.delete("/{venda_id}")
-async def deletar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
+async def deletar_venda(
+    venda_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Deletar uma venda específica."""
     try:
         # Buscar a venda
-        stmt = select(Venda).where(Venda.id == venda_id)
+        stmt = select(Venda).where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
         result = await db.execute(stmt)
         venda = result.scalar_one_or_none()
         
@@ -297,7 +319,8 @@ async def listar_vendas_usuario(
     data_inicio: str = None,
     data_fim: str = None,
     status_filter: str = None,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Listar vendas de um usuário específico com filtros opcionais."""
     try:
@@ -310,6 +333,7 @@ async def listar_vendas_usuario(
 
         # Query base
         stmt = select(Venda).options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
+        stmt = stmt.where(Venda.tenant_id == tenant_id)
 
         # Filtrar por usuário
         if usuario_uuid is not None:
@@ -373,7 +397,8 @@ async def listar_vendas_periodo(
     usuario_id: str = None,
     limit: int = None,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Listar vendas em um período específico com paginação."""
     try:
@@ -392,6 +417,9 @@ async def listar_vendas_periodo(
 
         # Filtrar por período
         stmt = stmt.where(Venda.created_at >= d1, Venda.created_at < d2_exclusive)
+
+        # Filtrar por tenant
+        stmt = stmt.where(Venda.tenant_id == tenant_id)
 
         # Padrão: excluir vendas canceladas (consistente com listar_vendas)
         stmt = stmt.where(Venda.cancelada == False)
@@ -433,13 +461,17 @@ async def listar_vendas_periodo(
         raise HTTPException(status_code=500, detail=f"Erro ao buscar vendas do período: {str(e)}")
 
 @router.put("/{venda_id}/cancelar", response_model=VendaResponse)
-async def cancelar_venda(venda_id: str, db: AsyncSession = Depends(get_db_session)):
+async def cancelar_venda(
+    venda_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Anula (cancela) uma venda (cancelada=True)."""
     try:
         # Atualizar flag cancelada
         await db.execute(
             update(Venda)
-            .where(Venda.id == venda_id)
+            .where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
             .values({Venda.cancelada: True, Venda.updated_at: datetime.utcnow()})
         )
         await db.commit()
@@ -448,7 +480,7 @@ async def cancelar_venda(venda_id: str, db: AsyncSession = Depends(get_db_sessio
         result = await db.execute(
             select(Venda)
             .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
-            .where(Venda.id == venda_id)
+            .where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
         )
         venda_atualizada = result.scalar_one_or_none()
         if not venda_atualizada:

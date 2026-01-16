@@ -4,27 +4,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, date
 import asyncio
+import uuid
 
 from ..db.database import get_db_session
 from ..db.models import Venda, ItemVenda, Produto
+from ..core.deps import get_tenant_id
 
 router = APIRouter(prefix="/api/metricas", tags=["metricas"]) 
 
 # Cache em memória simples para suavizar cold start (TTL curto)
-_metrics_cache = {
-    "vendas_dia": {"value": None, "ts": 0.0},
-    "vendas_mes": {"value": None, "ts": 0.0},
-}
+_metrics_cache = {}
 _cache_ttl_seconds = 15
 _cache_lock = asyncio.Lock()
 
 def _now_ts() -> float:
     return datetime.utcnow().timestamp()
 
+def _cache_get(key: str):
+    entry = _metrics_cache.get(key)
+    if not entry:
+        return None
+    if (_now_ts() - float(entry.get("ts", 0.0))) < _cache_ttl_seconds:
+        return entry.get("value")
+    return None
+
+def _cache_set(key: str, value):
+    _metrics_cache[key] = {"value": value, "ts": _now_ts()}
+
 @router.get("/vendas-dia")
 async def vendas_dia(
     data: str | None = Query(default=None, description="Data no formato YYYY-MM-DD (timezone do cliente)"),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Retorna o total de vendas (não canceladas) do dia informado (ou dia atual)."""
     # Data alvo: usar a recebida do cliente ou o dia do servidor
@@ -32,14 +43,16 @@ async def vendas_dia(
         alvo = date.fromisoformat(data) if data else date.today()
     except Exception:
         alvo = date.today()
-    # Servir cache se fresco
+    cache_key = f"vendas_dia:{tenant_id}:{alvo.isoformat()}"
     async with _cache_lock:
-        if _metrics_cache["vendas_dia"]["value"] is not None and (_now_ts() - _metrics_cache["vendas_dia"]["ts"]) < _cache_ttl_seconds:
-            return {"data": str(alvo), "total": float(_metrics_cache["vendas_dia"]["value"]) }
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return {"data": str(alvo), "total": float(cached)}
 
     stmt = select(func.coalesce(func.sum(Venda.total), 0.0)).where(
         Venda.cancelada == False,
-        func.date(Venda.created_at) == alvo
+        func.date(Venda.created_at) == alvo,
+        Venda.tenant_id == tenant_id,
     )
     # Tentativa principal + 1 retry leve
     for attempt in range(2):
@@ -47,7 +60,7 @@ async def vendas_dia(
             result = await db.execute(stmt)
             total = float(result.scalar() or 0.0)
             async with _cache_lock:
-                _metrics_cache["vendas_dia"] = {"value": total, "ts": _now_ts()}
+                _cache_set(cache_key, total)
             return {"data": str(alvo), "total": total}
         except Exception:
             if attempt == 0:
@@ -55,13 +68,14 @@ async def vendas_dia(
                 continue
             # Fallback: servir cache antigo se existir, senão 0
             async with _cache_lock:
-                cached = _metrics_cache["vendas_dia"]["value"]
+                cached = _metrics_cache.get(cache_key, {}).get("value")
             return {"data": str(alvo), "total": float(cached or 0.0), "warning": "cached"}
 
 @router.get("/vendas-mes")
 async def vendas_mes(
     ano_mes: str | None = Query(default=None, description="Ano-mês no formato YYYY-MM (timezone do cliente)"),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Retorna o total de vendas (não canceladas) do mês informado (ou mês atual)."""
     try:
@@ -85,36 +99,40 @@ async def vendas_mes(
         stmt = select(func.coalesce(func.sum(Venda.total), 0.0)).where(
             Venda.cancelada == False,
             Venda.created_at >= primeiro_dia,
-            Venda.created_at < proximo_mes
+            Venda.created_at < proximo_mes,
+            Venda.tenant_id == tenant_id,
         )
+        cache_key = f"vendas_mes:{tenant_id}:{primeiro_dia.strftime('%Y-%m')}"
         # Servir cache se fresco
         async with _cache_lock:
-            if _metrics_cache["vendas_mes"]["value"] is not None and (_now_ts() - _metrics_cache["vendas_mes"]["ts"]) < _cache_ttl_seconds:
-                return {"ano_mes": primeiro_dia.strftime("%Y-%m"), "total": float(_metrics_cache["vendas_mes"]["value"]) }
+            cached = _cache_get(cache_key)
+            if cached is not None:
+                return {"ano_mes": primeiro_dia.strftime("%Y-%m"), "total": float(cached)}
 
         for attempt in range(2):
             try:
                 result = await db.execute(stmt)
                 total = float(result.scalar() or 0.0)
                 async with _cache_lock:
-                    _metrics_cache["vendas_mes"] = {"value": total, "ts": _now_ts()}
+                    _cache_set(cache_key, total)
                 return {"ano_mes": primeiro_dia.strftime("%Y-%m"), "total": total}
             except Exception:
                 if attempt == 0:
                     await asyncio.sleep(0.2)
                     continue
                 async with _cache_lock:
-                    cached = _metrics_cache["vendas_mes"]["value"]
+                    cached = _metrics_cache.get(cache_key, {}).get("value")
                 return {"ano_mes": primeiro_dia.strftime("%Y-%m"), "total": float(cached or 0.0), "warning": "cached"}
     except Exception:
         # Falha inesperada: retornar cache ou zero
         async with _cache_lock:
-            cached = _metrics_cache["vendas_mes"]["value"]
+            cached = _metrics_cache.get(f"vendas_mes:{tenant_id}:{datetime.utcnow().strftime('%Y-%m')}", {}).get("value")
         return {"ano_mes": datetime.utcnow().strftime("%Y-%m"), "total": float(cached or 0.0), "warning": "cached"}
 
 @router.get("/estoque")
 async def metricas_estoque(
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Retorna métricas de estoque: valor_estoque (custo), valor_potencial (venda) e lucro_potencial.
 
@@ -124,8 +142,14 @@ async def metricas_estoque(
     - lucro_potencial = valor_potencial - valor_estoque
     """
     try:
-        stmt_custo = select(func.coalesce(func.sum(Produto.estoque * Produto.preco_custo), 0.0)).where(Produto.ativo == True)
-        stmt_venda = select(func.coalesce(func.sum(Produto.estoque * Produto.preco_venda), 0.0)).where(Produto.ativo == True)
+        stmt_custo = select(func.coalesce(func.sum(Produto.estoque * Produto.preco_custo), 0.0)).where(
+            Produto.ativo == True,
+            Produto.tenant_id == tenant_id,
+        )
+        stmt_venda = select(func.coalesce(func.sum(Produto.estoque * Produto.preco_venda), 0.0)).where(
+            Produto.ativo == True,
+            Produto.tenant_id == tenant_id,
+        )
 
         result_custo = await db.execute(stmt_custo)
         result_venda = await db.execute(stmt_venda)

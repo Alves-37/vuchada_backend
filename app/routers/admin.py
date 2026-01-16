@@ -61,21 +61,52 @@ async def reset_dados_tenant(
     if not exists.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Tenant não encontrado")
 
-    tables_order = [
-        "pdv.itens_venda",
-        "pdv.vendas",
-        "pdv.pagamentos_divida",
-        "pdv.itens_divida",
-        "pdv.dividas",
-        "pdv.produtos",
-        "pdv.clientes",
-        "pdv.usuarios",
-        "pdv.empresa_config",
-    ]
-
     try:
-        for table in tables_order:
-            await db.execute(text(f"DELETE FROM {table} WHERE tenant_id = :tid"), {"tid": str(tid)})
+        # Apagar dependências primeiro (mesmo se não tiverem tenant_id no model/tabela)
+        await db.execute(
+            text(
+                """
+                DELETE FROM pdv.itens_venda
+                WHERE venda_id IN (
+                    SELECT id FROM pdv.vendas WHERE tenant_id = :tid
+                )
+                """
+            ),
+            {"tid": str(tid)},
+        )
+
+        await db.execute(
+            text(
+                """
+                DELETE FROM pdv.pagamentos_divida
+                WHERE divida_id IN (
+                    SELECT id FROM pdv.dividas WHERE tenant_id = :tid
+                )
+                """
+            ),
+            {"tid": str(tid)},
+        )
+
+        await db.execute(
+            text(
+                """
+                DELETE FROM pdv.itens_divida
+                WHERE divida_id IN (
+                    SELECT id FROM pdv.dividas WHERE tenant_id = :tid
+                )
+                """
+            ),
+            {"tid": str(tid)},
+        )
+
+        # Agora apagar tabelas principais do tenant
+        await db.execute(text("DELETE FROM pdv.vendas WHERE tenant_id = :tid"), {"tid": str(tid)})
+        await db.execute(text("DELETE FROM pdv.dividas WHERE tenant_id = :tid"), {"tid": str(tid)})
+        await db.execute(text("DELETE FROM pdv.produtos WHERE tenant_id = :tid"), {"tid": str(tid)})
+        await db.execute(text("DELETE FROM pdv.clientes WHERE tenant_id = :tid"), {"tid": str(tid)})
+        await db.execute(text("DELETE FROM pdv.usuarios WHERE tenant_id = :tid"), {"tid": str(tid)})
+        await db.execute(text("DELETE FROM pdv.empresa_config WHERE tenant_id = :tid"), {"tid": str(tid)})
+
         await db.commit()
         return {
             "status": "ok",

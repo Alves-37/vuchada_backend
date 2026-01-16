@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
             # Observação: create_all() não aplica alterações em tabelas existentes.
             # Então garantimos via SQL que a tabela tenants e colunas tenant_id existam.
             default_tenant_id = os.getenv("DEFAULT_TENANT_ID")
-            default_tenant_name = os.getenv("DEFAULT_TENANT_NAME", "Default")
+            default_tenant_name = os.getenv("DEFAULT_TENANT_NAME", "Negócio padrão")
             tenant_uuid: uuid.UUID | None = None
             if default_tenant_id:
                 try:
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
 
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tipo_negocio VARCHAR(50) DEFAULT 'mercearia'"))
 
-            # Se não foi fornecido DEFAULT_TENANT_ID, reutilizar tenant existente (evita duplicar "Default")
+            should_insert_default = False
             if tenant_uuid is None:
                 existing_id = (await conn.execute(
                     text(
@@ -69,18 +69,21 @@ async def lifespan(app: FastAPI):
                     tenant_uuid = existing_id
                 else:
                     tenant_uuid = uuid.uuid4()
+                    should_insert_default = True
+            else:
+                should_insert_default = True
 
-            # Inserir tenant default (idempotente)
-            await conn.execute(
-                text(
-                    """
-                    INSERT INTO tenants (id, nome, ativo, tipo_negocio)
-                    VALUES (:id, :nome, TRUE, :tipo)
-                    ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, tipo_negocio = EXCLUDED.tipo_negocio;
-                    """
-                ),
-                {"id": tenant_uuid, "nome": default_tenant_name, "tipo": os.getenv("DEFAULT_TENANT_TIPO", "mercearia")},
-            )
+            if should_insert_default:
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO tenants (id, nome, ativo, tipo_negocio)
+                        VALUES (:id, :nome, TRUE, :tipo)
+                        ON CONFLICT (id) DO NOTHING;
+                        """
+                    ),
+                    {"id": tenant_uuid, "nome": default_tenant_name, "tipo": os.getenv("DEFAULT_TENANT_TIPO", "mercearia")},
+                )
 
             # Garantir colunas tenant_id nas tabelas principais (nullable por enquanto)
             for table in [

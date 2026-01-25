@@ -46,6 +46,119 @@ class ProdutoUpdate(BaseModel):
     taxa_iva: Optional[float] = None
     ativo: Optional[bool] = None
 
+
+class ProdutoUpsert(BaseModel):
+    codigo: str
+    nome: str
+    descricao: Optional[str] = None
+    imagem: Optional[str] = None
+    preco_custo: Optional[float] = 0.0
+    preco_venda: Optional[float] = 0.0
+    estoque: Optional[float] = 0.0
+    estoque_minimo: Optional[float] = 0.0
+    categoria_id: Optional[int] = None
+    venda_por_peso: Optional[bool] = False
+    unidade_medida: Optional[str] = "un"
+    taxa_iva: Optional[float] = 0.0
+    ativo: Optional[bool] = True
+    updated_at: Optional[str] = None
+
+
+def _parse_iso_dt(value: Optional[str]):
+    if not value:
+        return None
+    try:
+        s = str(value)
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        try:
+            if getattr(dt, "tzinfo", None) is not None:
+                dt = dt.replace(tzinfo=None)
+        except Exception:
+            pass
+        return dt
+    except Exception:
+        return None
+
+
+@router.post("/upsert")
+async def upsert_produto(
+    payload: ProdutoUpsert,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+    codigo = (payload.codigo or "").strip()
+    nome = (payload.nome or "").strip()
+    if not codigo or not nome:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="codigo e nome são obrigatórios")
+
+    result = await db.execute(
+        select(Produto).where(
+            Produto.codigo == codigo,
+            Produto.tenant_id == tenant_id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    incoming_updated = _parse_iso_dt(payload.updated_at)
+
+    if existing:
+        if incoming_updated and existing.updated_at and incoming_updated <= existing.updated_at:
+            return {"status": "skipped", "reason": "older_or_equal", "id": str(existing.id)}
+
+        update_data = {
+            "nome": nome,
+            "descricao": payload.descricao or "",
+            "preco_custo": float(payload.preco_custo or 0),
+            "preco_venda": float(payload.preco_venda or 0),
+            "estoque": float(payload.estoque or 0),
+            "estoque_minimo": float(payload.estoque_minimo or 0),
+            "categoria_id": payload.categoria_id,
+            "venda_por_peso": bool(payload.venda_por_peso or False),
+            "unidade_medida": payload.unidade_medida or "un",
+            "taxa_iva": float(payload.taxa_iva or 0.0),
+            "ativo": bool(payload.ativo if payload.ativo is not None else True),
+            "updated_at": incoming_updated or datetime.utcnow(),
+        }
+
+        if isinstance(payload.imagem, str):
+            update_data["imagem_path"] = payload.imagem
+
+        await db.execute(
+            update(Produto)
+            .where(
+                Produto.id == existing.id,
+                Produto.tenant_id == tenant_id,
+            )
+            .values(**update_data)
+        )
+        await db.commit()
+        return {"status": "updated", "id": str(existing.id)}
+
+    produto = Produto(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        codigo=codigo,
+        nome=nome,
+        descricao=payload.descricao or "",
+        preco_custo=float(payload.preco_custo or 0),
+        preco_venda=float(payload.preco_venda or 0),
+        estoque=float(payload.estoque or 0),
+        estoque_minimo=float(payload.estoque_minimo or 0),
+        categoria_id=payload.categoria_id,
+        venda_por_peso=bool(payload.venda_por_peso or False),
+        unidade_medida=payload.unidade_medida or "un",
+        taxa_iva=float(payload.taxa_iva or 0.0),
+        ativo=bool(payload.ativo if payload.ativo is not None else True),
+        updated_at=incoming_updated or datetime.utcnow(),
+    )
+    if isinstance(payload.imagem, str) and payload.imagem.strip():
+        produto.imagem_path = payload.imagem.strip()
+    db.add(produto)
+    await db.commit()
+    return {"status": "created", "id": str(produto.id)}
+
 class ProdutoResponse(BaseModel):
     id: str
     codigo: str

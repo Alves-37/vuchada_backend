@@ -125,14 +125,46 @@ async def lifespan(app: FastAPI):
                     senha_hash=get_password_hash(neotrix_pass),
                     is_admin=True,
                     ativo=True,
+                    tenant_id=tenant_uuid,
                 )
                 session.add(user)
                 await session.commit()
             else:
                 # Garantir tenant_id do usuário técnico
                 try:
+                    if getattr(user, "is_admin", None) is not True:
+                        user.is_admin = True
+                    if getattr(user, "ativo", None) is not True:
+                        user.ativo = True
                     if getattr(user, "tenant_id", None) is None:
                         user.tenant_id = tenant_uuid
+                    await session.commit()
+                except Exception:
+                    pass
+
+            # Garantir usuário admin Marrapaz
+            result2 = await session.execute(
+                select(User).where(func.lower(User.usuario) == func.lower("Marrapaz"))
+            )
+            user2 = result2.scalar_one_or_none()
+            restaurante_tenant_uuid = uuid.UUID("33333333-3333-3333-3333-333333333333")
+            if not user2:
+                marrapaz_pass = os.getenv("MARRAPAZ_ADMIN_PASS") or "603684"
+                user2 = User(
+                    nome="Saide Adamo Marrapaz",
+                    usuario="Marrapaz",
+                    senha_hash=get_password_hash(marrapaz_pass),
+                    is_admin=True,
+                    ativo=True,
+                    tenant_id=restaurante_tenant_uuid,
+                )
+                session.add(user2)
+                await session.commit()
+            else:
+                # Garantir tenant_id do usuário (para aparecer no tenant Restaurante no PDV)
+                try:
+                    if getattr(user2, "tenant_id", None) is None:
+                        user2.tenant_id = restaurante_tenant_uuid
                         await session.commit()
                 except Exception:
                     pass

@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["Sync"])
 
 # Placeholder for a dependency that would get the current user from a JWT token
 async def get_current_user():
     # In a real app, this would decode the token and return the user model
     return {"username": "testuser", "id": "123"}
 
-@router.post("/sync/push", tags=["Sync"])
+
+@router.get("/sync/ping")
+async def sync_ping():
+    return {"ok": True}
+
+@router.post("/sync/push")
 async def push_changes(changes: List[Dict[str, Any]], current_user: dict = Depends(get_current_user)):
     """Receives a batch of offline changes from a client."""
     # TODO: Implement the logic to process changes:
@@ -20,7 +25,7 @@ async def push_changes(changes: List[Dict[str, Any]], current_user: dict = Depen
     print(f"Received {len(changes)} changes from user {current_user['username']}")
     return {"status": "received", "processed_changes": len(changes), "mappings": []}
 
-@router.post("/sync/pull", tags=["Sync"])
+@router.post("/sync/pull")
 async def pull_changes(last_sync_at: str, current_user: dict = Depends(get_current_user)):
     """Provides changes from the server since the client's last sync time."""
     # TODO: Implement the logic to fetch new data:

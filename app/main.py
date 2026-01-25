@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import os
 import uuid
 from sqlalchemy import select, func, text
-from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws, tenants
+from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws, tenants, sync
 from app.routers import metricas, relatorios, empresa_config, admin, dividas
 from app.routers import public_menu
 from app.db.session import engine, AsyncSessionLocal
@@ -217,6 +217,7 @@ app.include_router(clientes.router)
 app.include_router(vendas.router)
 app.include_router(metricas.router)
 app.include_router(auth.router)
+app.include_router(sync.router)
 app.include_router(ws.router)
 app.include_router(relatorios.router)
 app.include_router(empresa_config.router)

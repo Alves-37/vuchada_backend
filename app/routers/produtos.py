@@ -312,7 +312,6 @@ async def upload_imagem_produto(
             select(Produto).where(
                 Produto.id == produto_id,
                 Produto.tenant_id == tenant_id,
-                Produto.ativo == True,
             )
         )
         produto = result.scalar_one_or_none()

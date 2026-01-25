@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import select, func, text
 from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws, tenants
 from app.routers import metricas, relatorios, empresa_config, admin, dividas
+from app.routers import public_menu
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
@@ -27,14 +28,7 @@ async def lifespan(app: FastAPI):
             # --- Multi-tenant bootstrap (Opção A) ---
             # Observação: create_all() não aplica alterações em tabelas existentes.
             # Então garantimos via SQL que a tabela tenants e colunas tenant_id existam.
-            default_tenant_id = os.getenv("DEFAULT_TENANT_ID")
-            default_tenant_name = os.getenv("DEFAULT_TENANT_NAME", "Negócio padrão")
             tenant_uuid: uuid.UUID | None = None
-            if default_tenant_id:
-                try:
-                    tenant_uuid = uuid.UUID(default_tenant_id)
-                except Exception:
-                    tenant_uuid = None
 
             await conn.execute(
                 text(
@@ -52,38 +46,38 @@ async def lifespan(app: FastAPI):
             )
 
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tipo_negocio VARCHAR(50) DEFAULT 'mercearia'"))
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug VARCHAR(80)"))
 
-            should_insert_default = False
-            if tenant_uuid is None:
-                existing_id = (await conn.execute(
-                    text(
-                        """
-                        SELECT id
-                        FROM tenants
-                        ORDER BY created_at
-                        LIMIT 1
-                        """
-                    )
-                )).scalar_one_or_none()
-                if existing_id:
-                    tenant_uuid = existing_id
-                else:
-                    tenant_uuid = uuid.uuid4()
-                    should_insert_default = True
-            else:
-                should_insert_default = True
+            # Em alguns bancos já existentes, a coluna pode ter sido criada como NOT NULL sem default.
+            # Garantimos default e preenchemos NULLs para evitar falha no bootstrap.
+            await conn.execute(text("ALTER TABLE tenants ALTER COLUMN is_system SET DEFAULT FALSE"))
+            await conn.execute(text("UPDATE tenants SET is_system = FALSE WHERE is_system IS NULL"))
 
-            if should_insert_default:
-                await conn.execute(
-                    text(
-                        """
-                        INSERT INTO tenants (id, nome, ativo, tipo_negocio)
-                        VALUES (:id, :nome, TRUE, :tipo)
-                        ON CONFLICT (id) DO NOTHING;
-                        """
-                    ),
-                    {"id": tenant_uuid, "nome": default_tenant_name, "tipo": os.getenv("DEFAULT_TENANT_TIPO", "mercearia")},
+            # Melhor esforço: garantir unicidade por índice (evita duplicação de slugs)
+            await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_tenants_slug ON tenants (slug)"))
+
+            # O sistema não cria mais "Negócio padrão" automaticamente.
+            # Usamos os tenants de sistema como base fixa.
+            tenant_uuid = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+            # Garantir tenants padrão (protegidos) para Mercearia e Restaurante
+            # Esses tenants são ocultáveis na UI e não podem ser removidos.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO tenants (id, nome, ativo, tipo_negocio, is_system)
+                    VALUES
+                        ('22222222-2222-2222-2222-222222222222', 'Mercearia', TRUE, 'mercearia', TRUE),
+                        ('33333333-3333-3333-3333-333333333333', 'Restaurante', TRUE, 'restaurante', TRUE)
+                    ON CONFLICT (id) DO NOTHING;
+                    """
                 )
+            )
+
+            # Garantir slugs fixos dos tenants padrão
+            await conn.execute(text("UPDATE tenants SET slug = 'mercearia' WHERE id = '22222222-2222-2222-2222-222222222222' AND (slug IS NULL OR slug = '')"))
+            await conn.execute(text("UPDATE tenants SET slug = 'restaurante' WHERE id = '33333333-3333-3333-3333-333333333333' AND (slug IS NULL OR slug = '')"))
 
             # Garantir colunas tenant_id nas tabelas principais (nullable por enquanto)
             for table in [
@@ -163,7 +157,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-MEDIA_DIR = os.getenv("MEDIA_DIR", "media")
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_DEFAULT_MEDIA_DIR = os.path.join(_BACKEND_ROOT, "media")
+MEDIA_DIR = os.getenv("MEDIA_DIR") or _DEFAULT_MEDIA_DIR
+if not os.path.isabs(MEDIA_DIR):
+    MEDIA_DIR = os.path.abspath(os.path.join(_BACKEND_ROOT, MEDIA_DIR))
+os.environ["MEDIA_DIR"] = MEDIA_DIR
 os.makedirs(MEDIA_DIR, exist_ok=True)
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
@@ -180,6 +179,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(categorias.router)
 app.include_router(produtos.router)
+app.include_router(public_menu.router)
 app.include_router(usuarios.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)
@@ -195,3 +195,8 @@ app.include_router(dividas.router)
 @app.get("/")
 async def read_root():
     return {"message": "PDV3 Backend is running!"}
+
+
+@app.get("/api/restaurant-status")
+async def restaurant_status():
+    return {"is_open": True}

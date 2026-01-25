@@ -13,6 +13,10 @@ from app.db.database import get_db_session
 from app.db.models import User, Tenant
 
 
+DEFAULT_TECH_TENANT_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+DEFAULT_MERCEARIA_TENANT_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
@@ -59,12 +63,22 @@ async def get_tenant_id(
     """
     if x_tenant_id:
         try:
-            return uuid.UUID(x_tenant_id)
+            tid = uuid.UUID(x_tenant_id)
+            if tid != DEFAULT_TECH_TENANT_ID:
+                return tid
         except Exception:
             pass
 
-    result = await db.execute(select(Tenant).order_by(Tenant.created_at))
-    tenant = result.scalars().first()
+    # Fallback seguro: nunca cair no tenant técnico 1111...
+    result_pref = await db.execute(select(Tenant).where(Tenant.id == DEFAULT_MERCEARIA_TENANT_ID))
+    tenant = result_pref.scalars().first()
+    if not tenant:
+        result = await db.execute(
+            select(Tenant)
+            .where(Tenant.id != DEFAULT_TECH_TENANT_ID)
+            .order_by(Tenant.created_at)
+        )
+        tenant = result.scalars().first()
     if not tenant:
         raise HTTPException(status_code=500, detail="Nenhum tenant configurado")
 

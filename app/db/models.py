@@ -13,8 +13,10 @@ class Tenant(DeclarativeBase):
     __tablename__ = "tenants"
 
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[Optional[str]] = mapped_column(String(80), nullable=True, unique=True, index=True)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     tipo_negocio: Mapped[Optional[str]] = mapped_column(String(50), default="mercearia")
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class User(DeclarativeBase):

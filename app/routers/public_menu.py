@@ -17,9 +17,50 @@ class PublicProdutoOut(BaseModel):
     id: str
     nome: str
     descricao: Optional[str] = None
+    categoria_id: Optional[int] = None
+    categoria_nome: Optional[str] = None
+    ativo: bool
     preco_venda: float
     imagem: Optional[str] = None
     estoque: float
+
+
+def _categoria_nome_por_tipo(tipo_negocio: str, categoria_id: Optional[int]) -> Optional[str]:
+    if not categoria_id:
+        return None
+    tipo = (tipo_negocio or "").strip().lower()
+
+    # Listas alinhadas com /api/categorias (routers/categorias.py)
+    if tipo == "restaurante":
+        mapping = {
+            1: "Pratos",
+            2: "Bebidas",
+            3: "Entradas",
+            4: "Sobremesas",
+            5: "Acompanhamentos",
+            6: "Lanches",
+            7: "Pizzas",
+            8: "Saladas",
+            9: "Grelhados",
+            10: "Massas",
+            11: "Outros",
+        }
+        return mapping.get(int(categoria_id))
+
+    mapping = {
+        1: "Alimentos",
+        2: "Bebidas",
+        3: "Limpeza",
+        4: "Higiene",
+        5: "Congelados",
+        6: "Mercearia",
+        7: "Padaria",
+        8: "Hortifruti",
+        9: "Açougue",
+        10: "Laticínios",
+        11: "Outros",
+    }
+    return mapping.get(int(categoria_id))
 
 
 def _resolve_public_image_path(produto: Produto, tenant_id: uuid.UUID) -> Optional[str]:
@@ -60,6 +101,10 @@ async def public_menu_produtos(
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
+    res_tenant = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = res_tenant.scalar_one_or_none()
+    tipo_negocio = (getattr(tenant, "tipo_negocio", None) if tenant else None) or "mercearia"
+
     query = select(Produto).where(
         Produto.ativo == True,
         Produto.tenant_id == tenant_id,
@@ -76,6 +121,9 @@ async def public_menu_produtos(
             id=str(p.id),
             nome=p.nome,
             descricao=p.descricao,
+            categoria_id=getattr(p, "categoria_id", None),
+            categoria_nome=_categoria_nome_por_tipo(tipo_negocio, getattr(p, "categoria_id", None)),
+            ativo=bool(getattr(p, "ativo", True)),
             preco_venda=float(p.preco_venda or 0.0),
             imagem=_resolve_public_image_path(p, tenant_id),
             estoque=float(p.estoque or 0.0),
@@ -100,6 +148,7 @@ async def public_menu_produtos_by_slug(
         raise HTTPException(status_code=404, detail="Tenant não encontrado")
 
     tenant_id = tenant.id
+    tipo_negocio = (getattr(tenant, "tipo_negocio", None) if tenant else None) or "mercearia"
     query = select(Produto).where(
         Produto.ativo == True,
         Produto.tenant_id == tenant_id,
@@ -115,6 +164,9 @@ async def public_menu_produtos_by_slug(
             id=str(p.id),
             nome=p.nome,
             descricao=p.descricao,
+            categoria_id=getattr(p, "categoria_id", None),
+            categoria_nome=_categoria_nome_por_tipo(tipo_negocio, getattr(p, "categoria_id", None)),
+            ativo=bool(getattr(p, "ativo", True)),
             preco_venda=float(p.preco_venda or 0.0),
             imagem=_resolve_public_image_path(p, tenant_id),
             estoque=float(p.estoque or 0.0),

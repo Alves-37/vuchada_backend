@@ -56,6 +56,7 @@ async def get_current_admin_user(
 async def get_tenant_id(
     db: AsyncSession = Depends(get_db_session),
     x_tenant_id: str | None = Header(default=None, alias="X-Tenant-Id"),
+    x_tenant_slug: str | None = Header(default=None, alias="X-Tenant-Slug"),
 ) -> uuid.UUID:
     """Resolve o tenant atual via header X-Tenant-Id.
 
@@ -68,6 +69,14 @@ async def get_tenant_id(
                 return tid
         except Exception:
             pass
+
+    if x_tenant_slug:
+        slug = (x_tenant_slug or "").strip().lower()
+        if slug:
+            result_slug = await db.execute(select(Tenant).where(Tenant.slug == slug, Tenant.ativo == True))
+            tenant_slug_obj = result_slug.scalars().first()
+            if tenant_slug_obj and tenant_slug_obj.id != DEFAULT_TECH_TENANT_ID:
+                return tenant_slug_obj.id
 
     # Fallback seguro: nunca cair no tenant técnico 1111...
     result_pref = await db.execute(select(Tenant).where(Tenant.id == DEFAULT_MERCEARIA_TENANT_ID))

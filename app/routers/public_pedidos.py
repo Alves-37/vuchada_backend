@@ -40,15 +40,16 @@ class PublicPedidoCreateOut(BaseModel):
 class PublicMesaOut(BaseModel):
     id: int
     nome: str
+    numero: int
     mesa_token: str
 
 
 def _default_mesas() -> list[PublicMesaOut]:
     return [
-        PublicMesaOut(id=1, nome="Mesa 1", mesa_token="mesa-1"),
-        PublicMesaOut(id=2, nome="Mesa 2", mesa_token="mesa-2"),
-        PublicMesaOut(id=3, nome="Mesa 3", mesa_token="mesa-3"),
-        PublicMesaOut(id=4, nome="Mesa 4", mesa_token="mesa-4"),
+        PublicMesaOut(id=1, nome="Mesa 1", numero=1, mesa_token="mesa-1"),
+        PublicMesaOut(id=2, nome="Mesa 2", numero=2, mesa_token="mesa-2"),
+        PublicMesaOut(id=3, nome="Mesa 3", numero=3, mesa_token="mesa-3"),
+        PublicMesaOut(id=4, nome="Mesa 4", numero=4, mesa_token="mesa-4"),
     ]
 
 

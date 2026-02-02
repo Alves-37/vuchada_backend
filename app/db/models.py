@@ -110,6 +110,23 @@ class ItemVenda(DeclarativeBase):
     produto: Mapped["Produto"] = relationship("Produto")
 
 
+class PaymentTransaction(DeclarativeBase):
+    __tablename__ = "payment_transactions"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    venda_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.vendas.id"), nullable=True, index=True)
+
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    amount: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), default="MZN")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    provider_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    venda: Mapped[Optional["Venda"]] = relationship("Venda")
+
+
 class EmpresaConfig(DeclarativeBase):
     __tablename__ = "empresa_config"
     __table_args__ = {"schema": PDV_SCHEMA}

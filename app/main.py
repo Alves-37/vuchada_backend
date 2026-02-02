@@ -9,6 +9,8 @@ from app.routers import health, produtos, usuarios, clientes, vendas, auth, cate
 from app.routers import metricas, relatorios, empresa_config, admin, dividas
 from app.routers import public_menu
 from app.routers import payments_mock
+from app.routers import public_pedidos
+from app.routers import payments
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
@@ -213,6 +215,7 @@ app.include_router(health.router)
 app.include_router(categorias.router)
 app.include_router(produtos.router)
 app.include_router(public_menu.router)
+app.include_router(public_pedidos.router)
 app.include_router(usuarios.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)
@@ -226,6 +229,7 @@ app.include_router(tenants.router)
 app.include_router(admin.router)
 app.include_router(dividas.router)
 app.include_router(payments_mock.router)
+app.include_router(payments.router)
 
 @app.get("/")
 async def read_root():

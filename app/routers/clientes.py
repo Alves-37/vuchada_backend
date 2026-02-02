@@ -9,24 +9,42 @@ from ..db.database import get_db_session
 from ..db.models import Cliente
 from app.core.realtime import manager as realtime_manager
 from ..schemas.cliente import ClienteCreate, ClienteUpdate, ClienteResponse
+from app.core.deps import get_tenant_id
 
 router = APIRouter(prefix="/api/clientes", tags=["clientes"])
 
 @router.get("/", response_model=List[ClienteResponse])
-async def listar_clientes(db: AsyncSession = Depends(get_db_session)):
+async def listar_clientes(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Lista todos os clientes."""
     try:
-        result = await db.execute(select(Cliente).where(Cliente.ativo == True))
+        result = await db.execute(
+            select(Cliente).where(
+                Cliente.ativo == True,
+                Cliente.tenant_id == tenant_id,
+            )
+        )
         clientes = result.scalars().all()
         return clientes
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar clientes: {str(e)}")
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)
-async def obter_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_session)):
+async def obter_cliente(
+    cliente_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Obtém um cliente específico por UUID."""
     try:
-        result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
+        result = await db.execute(
+            select(Cliente).where(
+                Cliente.id == cliente_id,
+                Cliente.tenant_id == tenant_id,
+            )
+        )
         cliente = result.scalar_one_or_none()
         
         if not cliente:
@@ -39,7 +57,11 @@ async def obter_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_sessi
         raise HTTPException(status_code=500, detail=f"Erro ao obter cliente: {str(e)}")
 
 @router.post("/", response_model=ClienteResponse)
-async def criar_cliente(cliente: ClienteCreate, db: AsyncSession = Depends(get_db_session)):
+async def criar_cliente(
+    cliente: ClienteCreate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Cria um novo cliente."""
     try:
         # Criar novo cliente
@@ -52,6 +74,7 @@ async def criar_cliente(cliente: ClienteCreate, db: AsyncSession = Depends(get_d
         
         novo_cliente = Cliente(
             id=cliente_uuid,
+            tenant_id=tenant_id,
             nome=cliente.nome,
             documento=cliente.documento,
             telefone=cliente.telefone,
@@ -84,11 +107,21 @@ async def criar_cliente(cliente: ClienteCreate, db: AsyncSession = Depends(get_d
         raise HTTPException(status_code=500, detail=f"Erro ao criar cliente: {str(e)}")
 
 @router.put("/{cliente_id}", response_model=ClienteResponse)
-async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSession = Depends(get_db_session)):
+async def atualizar_cliente(
+    cliente_id: str,
+    cliente: ClienteUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Atualiza um cliente existente."""
     try:
         # Buscar cliente existente
-        result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
+        result = await db.execute(
+            select(Cliente).where(
+                Cliente.id == cliente_id,
+                Cliente.tenant_id == tenant_id,
+            )
+        )
         cliente_existente = result.scalar_one_or_none()
         
         if not cliente_existente:
@@ -107,12 +140,19 @@ async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSe
         update_data["updated_at"] = datetime.utcnow()
 
         await db.execute(
-            update(Cliente).where(Cliente.id == cliente_id).values(update_data)
+            update(Cliente)
+            .where(Cliente.id == cliente_id, Cliente.tenant_id == tenant_id)
+            .values(update_data)
         )
         await db.commit()
         
         # Retornar cliente atualizado
-        result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
+        result = await db.execute(
+            select(Cliente).where(
+                Cliente.id == cliente_id,
+                Cliente.tenant_id == tenant_id,
+            )
+        )
         cliente_atualizado = result.scalar_one()
 
         # Broadcast realtime: cliente atualizado
@@ -137,11 +177,20 @@ async def atualizar_cliente(cliente_id: str, cliente: ClienteUpdate, db: AsyncSe
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar cliente: {str(e)}")
 
 @router.delete("/{cliente_id}")
-async def deletar_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_session)):
+async def deletar_cliente(
+    cliente_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Deleta um cliente (hard delete)."""
     try:
         # Buscar cliente existente (independente de ativo)
-        result = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
+        result = await db.execute(
+            select(Cliente).where(
+                Cliente.id == cliente_id,
+                Cliente.tenant_id == tenant_id,
+            )
+        )
         cliente_existente = result.scalar_one_or_none()
         
         if not cliente_existente:
@@ -149,7 +198,10 @@ async def deletar_cliente(cliente_id: str, db: AsyncSession = Depends(get_db_ses
         
         # Hard delete (remoção física)
         await db.execute(
-            delete(Cliente).where(Cliente.id == cliente_id)
+            delete(Cliente).where(
+                Cliente.id == cliente_id,
+                Cliente.tenant_id == tenant_id,
+            )
         )
         await db.commit()
 

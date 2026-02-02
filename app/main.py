@@ -8,6 +8,7 @@ from sqlalchemy import select, func, text
 from app.routers import health, produtos, usuarios, clientes, vendas, auth, categorias, ws, tenants, sync
 from app.routers import metricas, relatorios, empresa_config, admin, dividas
 from app.routers import public_menu
+from app.routers import payments_mock
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
@@ -224,6 +225,7 @@ app.include_router(empresa_config.router)
 app.include_router(tenants.router)
 app.include_router(admin.router)
 app.include_router(dividas.router)
+app.include_router(payments_mock.router)
 
 @app.get("/")
 async def read_root():

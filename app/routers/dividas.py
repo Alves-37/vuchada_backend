@@ -7,6 +7,7 @@ import uuid
 
 from app.db.database import get_db_session
 from app.db.models import Divida, ItemDivida, PagamentoDivida, Produto, Cliente, User
+from app.core.deps import get_tenant_id
 
 
 router = APIRouter(prefix="/api/dividas", tags=["dividas"])
@@ -73,7 +74,11 @@ def _parse_uuid(value: Optional[str]) -> Optional[uuid.UUID]:
 
 
 @router.post("/", response_model=DividaOut, status_code=201)
-async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_session)):
+async def criar_divida(
+    payload: DividaCreate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Cria uma nova dívida com itens, alinhada ao modelo local do PDV3."""
     if not payload.itens:
         raise HTTPException(status_code=400, detail="É necessário informar pelo menos um item na dívida.")
@@ -91,6 +96,7 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
         valor_total = max(0.0, valor_original - desconto_aplicado)
 
         nova_divida = Divida(
+            tenant_id=tenant_id,
             id_local=payload.id_local,
             cliente_id=cliente_uuid,
             usuario_id=usuario_uuid,
@@ -113,7 +119,12 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
                 raise HTTPException(status_code=400, detail=f"produto_id inválido: {item.produto_id}")
 
             # Verificar se produto existe
-            result_prod = await db.execute(select(Produto).where(Produto.id == produto_uuid))
+            result_prod = await db.execute(
+                select(Produto).where(
+                    Produto.id == produto_uuid,
+                    Produto.tenant_id == tenant_id,
+                )
+            )
             if not result_prod.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail=f"Produto inexistente no servidor: {item.produto_id}")
 
@@ -146,7 +157,11 @@ async def criar_divida(payload: DividaCreate, db: AsyncSession = Depends(get_db_
 
 
 @router.post("/sync")
-async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(get_db_session)):
+async def sync_dividas(
+    payload: DividaSyncRequest,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Sincroniza dívidas em lote a partir do PDV, usando id_local como chave.
 
     Para cada registro em payload.data:
@@ -164,7 +179,10 @@ async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(ge
         try:
             # Verificar se já existe dívida com mesmo id_local
             if item.id_local is not None:
-                stmt = select(Divida).where(Divida.id_local == item.id_local)
+                stmt = select(Divida).where(
+                    Divida.id_local == item.id_local,
+                    Divida.tenant_id == tenant_id,
+                )
                 result = await db.execute(stmt)
                 existente = result.scalar_one_or_none()
                 if existente:
@@ -185,6 +203,7 @@ async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(ge
             valor_total = max(0.0, valor_original - desconto_aplicado)
 
             nova_divida = Divida(
+                tenant_id=tenant_id,
                 id_local=item.id_local,
                 cliente_id=cliente_uuid,
                 usuario_id=usuario_uuid,
@@ -206,7 +225,12 @@ async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(ge
                 if not prod_uuid:
                     raise HTTPException(status_code=400, detail=f"produto_id inválido: {it.produto_id}")
 
-                result_prod = await db.execute(select(Produto).where(Produto.id == prod_uuid))
+                result_prod = await db.execute(
+                    select(Produto).where(
+                        Produto.id == prod_uuid,
+                        Produto.tenant_id == tenant_id,
+                    )
+                )
                 if not result_prod.scalar_one_or_none():
                     raise HTTPException(status_code=400, detail=f"Produto inexistente no servidor: {it.produto_id}")
 
@@ -256,6 +280,7 @@ async def sync_dividas(payload: DividaSyncRequest, db: AsyncSession = Depends(ge
 async def listar_dividas_abertas(
     cliente_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
     """Lista dívidas com status diferente de 'Quitado', opcionalmente filtrando por cliente."""
     try:
@@ -263,7 +288,10 @@ async def listar_dividas_abertas(
         stmt = (
             select(Divida, Cliente.nome.label("cliente_nome"))
             .join(Cliente, Divida.cliente_id == Cliente.id, isouter=True)
-            .where(Divida.status != "Quitado")
+            .where(
+                Divida.status != "Quitado",
+                Divida.tenant_id == tenant_id,
+            )
         )
 
         cliente_uuid = _parse_uuid(cliente_id)
@@ -286,7 +314,12 @@ async def listar_dividas_abertas(
 
 
 @router.post("/{divida_id}/pagamentos", response_model=DividaOut)
-async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn, db: AsyncSession = Depends(get_db_session)):
+async def registrar_pagamento_divida(
+    divida_id: str,
+    payload: PagamentoDividaIn,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
     """Registra um pagamento (parcial ou total) para uma dívida existente."""
     if payload.valor <= 0:
         raise HTTPException(status_code=400, detail="Valor do pagamento deve ser maior que zero.")
@@ -296,7 +329,12 @@ async def registrar_pagamento_divida(divida_id: str, payload: PagamentoDividaIn,
         if not divida_uuid:
             raise HTTPException(status_code=400, detail="ID de dívida inválido.")
 
-        result = await db.execute(select(Divida).where(Divida.id == divida_uuid))
+        result = await db.execute(
+            select(Divida).where(
+                Divida.id == divida_uuid,
+                Divida.tenant_id == tenant_id,
+            )
+        )
         divida = result.scalar_one_or_none()
         if not divida:
             raise HTTPException(status_code=404, detail="Dívida não encontrada.")

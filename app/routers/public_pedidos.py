@@ -27,6 +27,7 @@ class PublicPedidoCreateIn(BaseModel):
     mesa_id: int
     lugar_numero: int = 1
     observacao_cozinha: Optional[str] = None
+    payment_mode: Optional[str] = None
     itens: list[PublicPedidoItemIn] = Field(default_factory=list)
 
 
@@ -74,6 +75,9 @@ async def _create_venda_from_public_pedido(
 
     venda_uuid = uuid.uuid4()
 
+    payment_mode = (payload.payment_mode or "").strip().lower()
+    forma_pagamento = "BALCAO" if payment_mode in ("balcao", "cash", "dinheiro") else "PENDENTE_PAGAMENTO"
+
     nova_venda = Venda(
         id=venda_uuid,
         tenant_id=tenant_id,
@@ -81,7 +85,7 @@ async def _create_venda_from_public_pedido(
         cliente_id=None,
         total=0.0,
         desconto=0.0,
-        forma_pagamento="PENDENTE_PAGAMENTO",
+        forma_pagamento=forma_pagamento,
         observacoes=payload.observacao_cozinha,
         cancelada=False,
         created_at=datetime.utcnow(),

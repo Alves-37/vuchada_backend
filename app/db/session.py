@@ -20,7 +20,12 @@ try:
         pool_size=5,                  # Tune according to Railway plan
         max_overflow=5                # Allow short bursts
     )
-    AsyncSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    AsyncSessionLocal = async_sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        expire_on_commit=False,
+    )
 except Exception as e:
     print(f"Database connection error: {e}")
     print(f"DATABASE_URL: {settings.DATABASE_URL}")

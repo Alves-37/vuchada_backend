@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,3 +132,79 @@ async def mark_payment_paid(
 
     await db.commit()
     return {"status": "paid"}
+
+
+@router.get("/{payment_id}/pay", response_class=HTMLResponse)
+async def payment_pay_page(
+    payment_id: str,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+    try:
+        pid = uuid.UUID(payment_id)
+    except Exception:
+        return HTMLResponse("<h2>Pagamento inválido</h2>", status_code=400)
+
+    res = await db.execute(
+        select(PaymentTransaction).where(PaymentTransaction.id == pid, PaymentTransaction.tenant_id == tenant_id)
+    )
+    p = res.scalar_one_or_none()
+    if not p:
+        return HTMLResponse("<h2>Pagamento não encontrado</h2>", status_code=404)
+
+    status_val = str(getattr(p, "status", "pending") or "pending")
+    amount = float(getattr(p, "amount", 0.0) or 0.0)
+    currency = str(getattr(p, "currency", "MZN") or "MZN")
+    provider = str(getattr(p, "provider", "") or "").upper()
+    phone = str(getattr(p, "phone", "") or "")
+
+    if status_val == "paid":
+        return HTMLResponse(
+            f"""
+            <html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'></head>
+            <body style='font-family:Segoe UI,Arial,sans-serif;padding:18px;'>
+              <h2>Pagamento confirmado</h2>
+              <div>Operadora: <b>{provider}</b></div>
+              <div>Número: <b>{phone}</b></div>
+              <div style='margin-top:10px;'>Valor: <b>{amount:.2f} {currency}</b></div>
+              <p>Pode fechar esta página.</p>
+            </body></html>
+            """,
+            status_code=200,
+        )
+
+    return HTMLResponse(
+        f"""
+        <html>
+          <head>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>Confirmar pagamento</title>
+          </head>
+          <body style='font-family:Segoe UI,Arial,sans-serif;padding:18px;'>
+            <h2>Confirmar pagamento (simulação)</h2>
+            <div style='margin-top:6px;'>Operadora: <b>{provider}</b></div>
+            <div style='margin-top:6px;'>Número: <b>{phone}</b></div>
+            <div style='margin-top:12px;'>Valor: <b>{amount:.2f} {currency}</b></div>
+            <div style='margin-top:16px;'>
+              <button id='payBtn' style='padding:12px 16px;border:0;border-radius:12px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer;'>Confirmar no telemóvel</button>
+            </div>
+            <div id='msg' style='margin-top:12px;color:#374151;'></div>
+            <script>
+              const msg = document.getElementById('msg');
+              document.getElementById('payBtn').addEventListener('click', async () => {{
+                try {{
+                  msg.textContent = 'Processando...';
+                  const res = await fetch('/api/payments/{payment_id}/mark-paid', {{ method: 'POST' }});
+                  const data = await res.json();
+                  msg.textContent = (data && data.status === 'paid') ? 'Pago com sucesso.' : 'Falha.';
+                  setTimeout(() => location.reload(), 900);
+                }} catch (e) {{
+                  msg.textContent = 'Erro ao pagar.';
+                }}
+              }});
+            </script>
+          </body>
+        </html>
+        """,
+        status_code=200,
+    )

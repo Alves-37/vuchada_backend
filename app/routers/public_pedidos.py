@@ -203,10 +203,48 @@ async def public_get_pedido_by_uuid(
     if bool(getattr(v, "cancelada", False)):
         status = "CANCELADO"
 
+    res_itens = await db.execute(
+        select(ItemVenda, Produto)
+        .join(Produto, Produto.id == ItemVenda.produto_id)
+        .where(
+            ItemVenda.venda_id == v.id,
+            Produto.tenant_id == tenant_id,
+        )
+    )
+    itens_rows = res_itens.all()
+    itens_out = []
+    for item, produto in itens_rows:
+        itens_out.append(
+            {
+                "produto_id": str(getattr(produto, "id", "")),
+                "produto_nome": str(getattr(produto, "nome", None) or getattr(produto, "descricao", None) or "Produto"),
+                "quantidade": int(getattr(item, "quantidade", 0) or 0),
+                "subtotal": float(getattr(item, "subtotal", 0.0) or 0.0),
+            }
+        )
+
+    taxa_entrega = float(getattr(v, "taxa_entrega", 0.0) or 0.0)
+    total_base = float(getattr(v, "total", 0.0) or 0.0)
+    valor_total = float(total_base + (taxa_entrega if taxa_entrega > 0 else 0.0))
+
+    updated_at = getattr(v, "updated_at", None)
+    if not updated_at:
+        updated_at = getattr(v, "created_at", None)
+
     return {
         "pedido_uuid": str(v.id),
         "pedido_id": str(v.id)[:8],
         "status": status,
-        "total": float(getattr(v, "total", 0.0) or 0.0),
+        "valor_total": valor_total,
+        "total": total_base,
+        "taxa_entrega": taxa_entrega,
+        "tipo_pedido": getattr(v, "tipo_pedido", None),
+        "mesa_id": getattr(v, "mesa_id", None),
+        "distancia_tipo": getattr(v, "distancia_tipo", None),
+        "cliente_nome": getattr(v, "cliente_nome", None),
+        "cliente_telefone": getattr(v, "cliente_telefone", None),
+        "endereco_entrega": getattr(v, "endereco_entrega", None),
         "created_at": getattr(v, "created_at", None).isoformat() if getattr(v, "created_at", None) else None,
+        "updated_at": updated_at.isoformat() if updated_at else None,
+        "itens": itens_out,
     }

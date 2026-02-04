@@ -124,6 +124,10 @@ async def mark_payment_paid(
         venda = res_v.scalar_one_or_none()
         if venda:
             venda.forma_pagamento = (getattr(p, "provider", None) or "online").upper()
+            try:
+                setattr(venda, "status_pedido", "pago")
+            except Exception:
+                pass
 
     await db.commit()
     return {"status": "paid"}

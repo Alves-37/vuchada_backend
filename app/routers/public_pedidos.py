@@ -79,6 +79,8 @@ async def _create_venda_from_public_pedido(
     payment_mode = (payload.payment_mode or "").strip().lower()
     forma_pagamento = "BALCAO" if payment_mode in ("balcao", "cash", "dinheiro") else "PENDENTE_PAGAMENTO"
 
+    status_pedido = "aguardando_pagamento" if forma_pagamento == "BALCAO" else "criado"
+
     nova_venda = Venda(
         id=venda_uuid,
         tenant_id=tenant_id,
@@ -87,6 +89,10 @@ async def _create_venda_from_public_pedido(
         total=0.0,
         desconto=0.0,
         forma_pagamento=forma_pagamento,
+        tipo_pedido="local",
+        status_pedido=status_pedido,
+        mesa_id=int(payload.mesa_id) if getattr(payload, "mesa_id", None) is not None else None,
+        lugar_numero=int(payload.lugar_numero) if getattr(payload, "lugar_numero", None) is not None else None,
         observacoes=payload.observacao_cozinha,
         cancelada=False,
         created_at=datetime.utcnow(),
@@ -151,7 +157,7 @@ async def public_create_pedido(
     return PublicPedidoCreateOut(
         pedido_id=str(venda.id)[:8],
         pedido_uuid=str(venda.id),
-        status="PENDENTE_PAGAMENTO",
+        status=str(getattr(venda, "status_pedido", None) or "criado"),
     )
 
 
@@ -171,7 +177,7 @@ async def public_create_pedido_by_token(
     return PublicPedidoCreateOut(
         pedido_id=str(venda.id)[:8],
         pedido_uuid=str(venda.id),
-        status="PENDENTE_PAGAMENTO",
+        status=str(getattr(venda, "status_pedido", None) or "criado"),
     )
 
 
@@ -191,7 +197,9 @@ async def public_get_pedido_by_uuid(
     if not v:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
-    status = "PENDENTE_PAGAMENTO" if (getattr(v, "forma_pagamento", "") == "PENDENTE_PAGAMENTO") else "CONFIRMADO"
+    status = getattr(v, "status_pedido", None)
+    if not status:
+        status = "aguardando_pagamento" if (getattr(v, "forma_pagamento", "") == "PENDENTE_PAGAMENTO") else "criado"
     if bool(getattr(v, "cancelada", False)):
         status = "CANCELADO"
 

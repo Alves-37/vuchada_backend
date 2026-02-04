@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
-"""Run DB migration to create pdv.payment_transactions table.
+"""Run DB migration to add menu-digital fields into pdv.vendas.
 
-- Reads and executes scripts/add_payment_transactions_table.sql against DATABASE_URL
+- Reads and executes scripts/add_vendas_menu_fields.sql against DATABASE_URL
 - Uses SQLAlchemy async engine (asyncpg)
 
 Usage:
-  python scripts/run_migration_payment_transactions.py
+  python scripts/run_migration_vendas_menu_fields.py --url "postgresql://..."
 
-Requirements:
-  DATABASE_URL env var must be set (Railway provides it). If running locally,
-  set DATABASE_URL to your Railway Postgres connection string.
+If --url and env DATABASE_URL are missing, it will ask interactively.
 """
 
 import asyncio
 import os
 import sys
-from pathlib import Path
 import argparse
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Ensure project root is on sys.path so 'app' package can be imported when run from scripts/
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -34,7 +31,7 @@ except Exception:
     settings = None
     SETTINGS_OK = False
 
-SQL_FILE = Path(__file__).with_name("add_payment_transactions_table.sql")
+SQL_FILE = Path(__file__).with_name("add_vendas_menu_fields.sql")
 
 
 async def run() -> None:
@@ -54,23 +51,21 @@ async def run() -> None:
 
     if not db_url:
         try:
-            db_url = input(
-                "Cole o DATABASE_URL do Postgres (Railway) e pressione Enter: "
-            ).strip()
+            db_url = input("Cole o DATABASE_URL do Postgres (Railway) e pressione Enter: ").strip()
         except Exception:
             db_url = ""
 
     if not db_url:
         raise RuntimeError(
             "DATABASE_URL não definido. Use env DATABASE_URL ou rode: "
-            "python scripts/run_migration_payment_transactions.py --url <URL>"
+            "python scripts/run_migration_vendas_menu_fields.py --url <URL>"
         )
 
     if not db_url.startswith("postgresql+asyncpg://"):
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
 
-    print("\n=== MIGRATION: create pdv.payment_transactions ===")
+    print("\n=== MIGRATION: add menu fields to pdv.vendas ===")
     print(f"SQL file: {SQL_FILE}")
 
     engine = create_async_engine(db_url, echo=False, pool_pre_ping=True)

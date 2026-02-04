@@ -40,6 +40,9 @@ class Settings(BaseSettings):
             self.DATABASE_URL = db_url
         elif db_url.startswith("postgresql://"):
             self.DATABASE_URL = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif db_url.startswith("postgres://"):
+            # Alguns providers (incluindo Railway) usam este alias
+            self.DATABASE_URL = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
         else:
             self.DATABASE_URL = db_url
 

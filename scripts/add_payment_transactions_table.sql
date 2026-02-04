@@ -18,38 +18,14 @@ CREATE TABLE IF NOT EXISTS pdv.payment_transactions (
   provider_reference VARCHAR(100) NULL
 );
 
--- Foreign keys (add if not exists pattern via exception-safe DO blocks)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE c.conname = 'fk_payment_transactions_tenant_id'
-      AND n.nspname = 'pdv'
-      AND t.relname = 'payment_transactions'
-  ) THEN
-    ALTER TABLE pdv.payment_transactions
-      ADD CONSTRAINT fk_payment_transactions_tenant_id
-      FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-  END IF;
-END $$;
+-- Foreign keys
+ALTER TABLE pdv.payment_transactions
+  ADD CONSTRAINT fk_payment_transactions_tenant_id
+  FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE c.conname = 'fk_payment_transactions_venda_id'
-      AND n.nspname = 'pdv'
-      AND t.relname = 'payment_transactions'
-  ) THEN
-    ALTER TABLE pdv.payment_transactions
-      ADD CONSTRAINT fk_payment_transactions_venda_id
-      FOREIGN KEY (venda_id) REFERENCES pdv.vendas(id);
-  END IF;
-END $$;
+ALTER TABLE pdv.payment_transactions
+  ADD CONSTRAINT fk_payment_transactions_venda_id
+  FOREIGN KEY (venda_id) REFERENCES pdv.vendas(id);
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS ix_pdv_payment_transactions_tenant_id ON pdv.payment_transactions(tenant_id);

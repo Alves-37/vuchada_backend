@@ -3,8 +3,16 @@ from app.core.config import settings
 
 # Create engine with error handling
 try:
+    db_url = str(settings.DATABASE_URL)
+    if db_url.startswith("postgresql+asyncpg://"):
+        pass
+    elif db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
     engine = create_async_engine(
-        settings.DATABASE_URL,
+        db_url,
         pool_pre_ping=True,           # Detect stale connections
         pool_recycle=900,             # Recycle connections every 15 minutes
         pool_timeout=30,              # Wait up to 30s for a connection

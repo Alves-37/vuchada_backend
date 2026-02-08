@@ -58,6 +58,19 @@ async def push_changes(
 
     results: list[dict] = []
 
+    def _parse_dt(v: Any) -> datetime | None:
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v
+        try:
+            s = str(v)
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            return datetime.fromisoformat(s)
+        except Exception:
+            return None
+
     def _parse_uuid(v: Any) -> uuid.UUID | None:
         if v is None:
             return None
@@ -88,7 +101,17 @@ async def push_changes(
                 venda_db = existing.scalar_one_or_none()
 
                 total = float(payload.get("valor_total") or payload.get("total") or 0)
-                created_at = payload.get("created_at") or payload.get("data_inicio")
+                created_at = _parse_dt(payload.get("created_at") or payload.get("data_inicio"))
+                updated_at = _parse_dt(payload.get("updated_at"))
+
+                mesa_id = payload.get("mesa_id")
+                lugar_numero = payload.get("lugar_numero")
+                status_payload = payload.get("status")
+
+                tipo_pedido = payload.get("tipo_pedido")
+                if not tipo_pedido:
+                    # Se não veio no payload, inferir pelo mesa_id
+                    tipo_pedido = "distancia" if mesa_id in (None, "", 0, "0") else "local"
 
                 if venda_db is None:
                     venda_db = Venda(
@@ -99,12 +122,39 @@ async def push_changes(
                         total=total,
                         desconto=0.0,
                         forma_pagamento=str(payload.get("forma_pagamento") or "dinheiro"),
+                        tipo_pedido=str(tipo_pedido) if tipo_pedido is not None else None,
+                        status_pedido=str(status_payload) if status_payload is not None else None,
+                        mesa_id=int(mesa_id) if mesa_id not in (None, "") else None,
+                        lugar_numero=int(lugar_numero) if lugar_numero not in (None, "") else None,
                         observacoes=payload.get("observacao_cozinha") or payload.get("observacoes"),
                         cancelada=False,
                         created_at=created_at,
                     )
                     db.add(venda_db)
                     await db.flush()
+                else:
+                    # Atualizar campos principais (inclui mudança de status)
+                    venda_db.total = total
+                    if payload.get("forma_pagamento") is not None:
+                        venda_db.forma_pagamento = str(payload.get("forma_pagamento") or venda_db.forma_pagamento)
+                    try:
+                        venda_db.tipo_pedido = str(tipo_pedido) if tipo_pedido is not None else venda_db.tipo_pedido
+                    except Exception:
+                        pass
+                    try:
+                        if status_payload is not None:
+                            venda_db.status_pedido = str(status_payload)
+                    except Exception:
+                        pass
+                    try:
+                        venda_db.mesa_id = int(mesa_id) if mesa_id not in (None, "") else None
+                        venda_db.lugar_numero = int(lugar_numero) if lugar_numero not in (None, "") else None
+                    except Exception:
+                        pass
+                    try:
+                        venda_db.updated_at = updated_at or datetime.utcnow()
+                    except Exception:
+                        pass
 
                 itens = payload.get("itens") or []
 

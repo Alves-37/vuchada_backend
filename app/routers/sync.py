@@ -381,7 +381,15 @@ async def pull_changes(
             s = str(v)
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
-            return datetime.fromisoformat(s)
+            dt = datetime.fromisoformat(s)
+            # Normalizar para evitar erro "offset-naive/offset-aware" ao comparar com colunas
+            # que podem ser armazenadas sem timezone.
+            try:
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            except Exception:
+                pass
+            return dt
         except Exception:
             return None
 
@@ -481,6 +489,12 @@ async def pull_changes(
                 "valor_recebido": float(getattr(v, "total", 0) or 0),
                 "troco": 0.0,
                 "observacao_cozinha": getattr(v, "observacoes", None),
+                "tipo_pedido": getattr(v, "tipo_pedido", None),
+                "distancia_tipo": getattr(v, "distancia_tipo", None),
+                "cliente_nome": getattr(v, "cliente_nome", None),
+                "cliente_telefone": getattr(v, "cliente_telefone", None),
+                "endereco_entrega": getattr(v, "endereco_entrega", None),
+                "taxa_entrega": float(getattr(v, "taxa_entrega", 0.0) or 0.0),
                 "data_inicio": getattr(v, "created_at", None).isoformat() if getattr(v, "created_at", None) else None,
                 "data_fechamento": getattr(v, "created_at", None).isoformat() if getattr(v, "created_at", None) else None,
                 "created_at": getattr(v, "created_at", None).isoformat() if getattr(v, "created_at", None) else None,

@@ -13,6 +13,7 @@ from app.routers import public_pedidos
 from app.routers import payments
 from app.routers import public_distancia
 from app.routers import mesas
+from app.routers import pedidos
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
@@ -89,6 +90,7 @@ async def lifespan(app: FastAPI):
                 "pdv.usuarios",
                 "pdv.produtos",
                 "pdv.clientes",
+                "pdv.mesas",
                 "pdv.vendas",
                 "pdv.empresa_config",
                 "pdv.dividas",
@@ -107,6 +109,7 @@ async def lifespan(app: FastAPI):
                 "pdv.usuarios",
                 "pdv.produtos",
                 "pdv.clientes",
+                "pdv.mesas",
                 "pdv.vendas",
                 "pdv.empresa_config",
                 "pdv.dividas",
@@ -225,6 +228,7 @@ app.include_router(public_menu.router)
 app.include_router(public_pedidos.router)
 app.include_router(public_distancia.router)
 app.include_router(mesas.router)
+app.include_router(pedidos.router)
 app.include_router(usuarios.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)

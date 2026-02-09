@@ -99,6 +99,17 @@ class Venda(DeclarativeBase):
     itens: Mapped[list["ItemVenda"]] = relationship("ItemVenda", back_populates="venda")
 
 
+class Mesa(DeclarativeBase):
+    __tablename__ = "mesas"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    capacidade: Mapped[int] = mapped_column(Integer, default=4)
+    status: Mapped[str] = mapped_column(String(30), default="Livre")
+    mesa_token: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+
+
 class ItemVenda(DeclarativeBase):
     __tablename__ = "itens_venda"
     __table_args__ = {"schema": PDV_SCHEMA}

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_tenant_id
 from app.db.database import get_db_session
-from app.db.models import Produto, Venda, ItemVenda
+from app.db.models import Produto, Venda, ItemVenda, Mesa
 
 
 router = APIRouter(prefix="/public", tags=["public_pedidos"])
@@ -53,17 +53,69 @@ def _default_mesas() -> list[PublicMesaOut]:
     ]
 
 
+async def _ensure_default_mesas(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id).limit(1))
+    if res.scalar_one_or_none():
+        return
+
+    for n in (1, 2, 3, 4):
+        db.add(
+            Mesa(
+                tenant_id=tenant_id,
+                numero=n,
+                capacidade=4,
+                status="Livre",
+                mesa_token=f"mesa-{n}",
+            )
+        )
+    await db.commit()
+
+
 @router.get("/mesas", response_model=list[PublicMesaOut])
-async def public_list_mesas():
-    return _default_mesas()
+async def public_list_mesas(
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+):
+    try:
+        await _ensure_default_mesas(db, tenant_id)
+        res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id).order_by(Mesa.numero.asc()))
+        rows = res.scalars().all()
+        return [
+            PublicMesaOut(
+                id=int(getattr(m, "id")),
+                nome=f"Mesa {int(getattr(m, 'numero'))}",
+                numero=int(getattr(m, "numero")),
+                mesa_token=str(getattr(m, "mesa_token")),
+            )
+            for m in rows
+        ]
+    except Exception:
+        # Fallback para não quebrar o menu em ambientes ainda sem a tabela.
+        return _default_mesas()
 
 
-def _mesa_from_token(token: str) -> Optional[PublicMesaOut]:
+async def _mesa_from_token(db: AsyncSession, tenant_id: uuid.UUID, token: str) -> Optional[PublicMesaOut]:
     t = (token or "").strip().lower()
-    for m in _default_mesas():
-        if m.mesa_token == t:
-            return m
-    return None
+    if not t:
+        return None
+    try:
+        await _ensure_default_mesas(db, tenant_id)
+        res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.mesa_token == t).limit(1))
+        m = res.scalar_one_or_none()
+        if not m:
+            return None
+        return PublicMesaOut(
+            id=int(getattr(m, "id")),
+            nome=f"Mesa {int(getattr(m, 'numero'))}",
+            numero=int(getattr(m, "numero")),
+            mesa_token=str(getattr(m, "mesa_token")),
+        )
+    except Exception:
+        # Fallback em ambientes sem DB
+        for m in _default_mesas():
+            if m.mesa_token == t:
+                return m
+        return None
 
 
 async def _create_venda_from_public_pedido(
@@ -168,7 +220,7 @@ async def public_create_pedido_by_token(
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
 ):
-    mesa = _mesa_from_token(mesa_token)
+    mesa = await _mesa_from_token(db, tenant_id, mesa_token)
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa não encontrada")
 

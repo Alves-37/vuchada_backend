@@ -466,11 +466,16 @@ async def pull_changes(
         pedidos.append(
             {
                 "uuid": v_id,
-                "mesa_id": None,
-                "mesa_numero": None,
+                "mesa_id": getattr(v, "mesa_id", None),
+                "mesa_numero": getattr(v, "mesa_id", None),
                 "lugar_numero": 1,
                 "usuario_id": str(getattr(v, "usuario_id", None)) if getattr(v, "usuario_id", None) else None,
-                "status": "pago",
+                "status": getattr(v, "status_pedido", None)
+                or (
+                    "aguardando_pagamento"
+                    if (getattr(v, "forma_pagamento", "") == "PENDENTE_PAGAMENTO")
+                    else "criado"
+                ),
                 "forma_pagamento_id": 1,
                 "valor_total": float(getattr(v, "total", 0) or 0),
                 "valor_recebido": float(getattr(v, "total", 0) or 0),

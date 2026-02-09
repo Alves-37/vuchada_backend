@@ -24,7 +24,7 @@ class PublicPedidoItemIn(BaseModel):
 
 
 class PublicPedidoCreateIn(BaseModel):
-    mesa_id: int
+    mesa_id: Optional[int] = None
     lugar_numero: int = 1
     observacao_cozinha: Optional[str] = None
     payment_mode: Optional[str] = None
@@ -126,6 +126,9 @@ async def _create_venda_from_public_pedido(
     if not payload.itens:
         raise HTTPException(status_code=400, detail="Pedido sem itens")
 
+    if getattr(payload, "mesa_id", None) is None:
+        raise HTTPException(status_code=400, detail="mesa_id é obrigatório")
+
     venda_uuid = uuid.uuid4()
 
     payment_mode = (payload.payment_mode or "").strip().lower()
@@ -143,7 +146,7 @@ async def _create_venda_from_public_pedido(
         forma_pagamento=forma_pagamento,
         tipo_pedido="local",
         status_pedido=status_pedido,
-        mesa_id=int(payload.mesa_id) if getattr(payload, "mesa_id", None) is not None else None,
+        mesa_id=int(payload.mesa_id),
         lugar_numero=int(payload.lugar_numero) if getattr(payload, "lugar_numero", None) is not None else None,
         observacoes=payload.observacao_cozinha,
         cancelada=False,

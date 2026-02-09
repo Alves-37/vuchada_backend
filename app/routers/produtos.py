@@ -123,7 +123,9 @@ async def upsert_produto(
         }
 
         if isinstance(payload.imagem, str):
-            update_data["imagem_path"] = payload.imagem
+            img = payload.imagem.strip()
+            if img and not img.lower().startswith("assets/") and not img.lower().startswith("assets\\"):
+                update_data["imagem_path"] = img
 
         await db.execute(
             update(Produto)
@@ -153,8 +155,10 @@ async def upsert_produto(
         ativo=bool(payload.ativo if payload.ativo is not None else True),
         updated_at=incoming_updated or datetime.utcnow(),
     )
-    if isinstance(payload.imagem, str) and payload.imagem.strip():
-        produto.imagem_path = payload.imagem.strip()
+    if isinstance(payload.imagem, str):
+        img = payload.imagem.strip()
+        if img and not img.lower().startswith("assets/") and not img.lower().startswith("assets\\"):
+            produto.imagem_path = img
     db.add(produto)
     await db.commit()
     return {"status": "created", "id": str(produto.id)}

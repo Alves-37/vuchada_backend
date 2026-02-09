@@ -93,7 +93,8 @@ async def push_changes(
                 try:
                     venda_uuid = uuid.UUID(str(pedido_uuid))
                 except Exception:
-                    venda_uuid = uuid.uuid4()
+                    results.append({"outbox_id": int(ev.outbox_id), "ok": False, "error": "invalid uuid"})
+                    continue
 
                 existing = await db.execute(
                     select(Venda).where(Venda.id == venda_uuid, Venda.tenant_id == tenant_id)

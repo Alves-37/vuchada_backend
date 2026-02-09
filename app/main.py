@@ -248,16 +248,3 @@ async def read_root():
 @app.get("/api/restaurant-status")
 async def restaurant_status():
     return {"is_open": True}
-app.include_router(admin.router)
-app.include_router(dividas.router)
-app.include_router(payments_mock.router)
-app.include_router(payments.router)
-
-@app.get("/")
-async def read_root():
-    return {"message": "PDV3 Backend is running!"}
-
-
-@app.get("/api/restaurant-status")
-async def restaurant_status():
-    return {"is_open": True}

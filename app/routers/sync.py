@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -158,8 +158,11 @@ async def push_changes(
 
                 itens = payload.get("itens") or []
 
+                # IMPORTANTE: quando o POS envia snapshot do pedido (ex.: mudança de status),
+                # os itens vêm completos. Se apenas inserirmos, duplicamos itens no acompanhamento.
+                # Então fazemos replace: apagamos os itens atuais e inserimos os do payload.
                 try:
-                    await db.execute(select(ItemVenda).where(ItemVenda.venda_id == venda_db.id))
+                    await db.execute(delete(ItemVenda).where(ItemVenda.venda_id == venda_db.id))
                 except Exception:
                     pass
 
@@ -382,11 +385,12 @@ async def pull_changes(
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
             dt = datetime.fromisoformat(s)
-            # Normalizar para evitar erro "offset-naive/offset-aware" ao comparar com colunas
-            # que podem ser armazenadas sem timezone.
+            # Venda.updated_at é TIMESTAMPTZ (timezone-aware). Garantir since timezone-aware em UTC.
             try:
-                if dt.tzinfo is not None:
-                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                else:
+                    dt = dt.astimezone(timezone.utc)
             except Exception:
                 pass
             return dt

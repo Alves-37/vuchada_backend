@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi import Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from datetime import datetime, date
 import asyncio
 import uuid
@@ -53,6 +53,10 @@ async def vendas_dia(
         Venda.cancelada == False,
         func.date(Venda.created_at) == alvo,
         Venda.tenant_id == tenant_id,
+        or_(
+            Venda.status_pedido.is_(None),
+            func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+        ),
     )
     # Tentativa principal + 1 retry leve
     for attempt in range(2):
@@ -101,6 +105,10 @@ async def vendas_mes(
             Venda.created_at >= primeiro_dia,
             Venda.created_at < proximo_mes,
             Venda.tenant_id == tenant_id,
+            or_(
+                Venda.status_pedido.is_(None),
+                func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+            ),
         )
         cache_key = f"vendas_mes:{tenant_id}:{primeiro_dia.strftime('%Y-%m')}"
         # Servir cache se fresco

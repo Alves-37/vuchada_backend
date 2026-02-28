@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db_session
@@ -172,7 +172,15 @@ async def relatorio_vendas(
             selectinload(Venda.cliente),
             selectinload(Venda.usuario),
         )
-        .where(Venda.created_at >= d1, Venda.created_at < d2_exclusive, Venda.cancelada == False)
+        .where(
+            Venda.created_at >= d1,
+            Venda.created_at < d2_exclusive,
+            Venda.cancelada == False,
+            or_(
+                Venda.status_pedido.is_(None),
+                func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+            ),
+        )
     )
 
     if usuario_id is not None:
@@ -292,7 +300,15 @@ async def relatorio_financeiro(
     stmt_v = (
         select(Venda)
         .options(selectinload(Venda.itens))
-        .where(Venda.created_at >= d1, Venda.created_at < d2_exclusive, Venda.cancelada == False)
+        .where(
+            Venda.created_at >= d1,
+            Venda.created_at < d2_exclusive,
+            Venda.cancelada == False,
+            or_(
+                Venda.status_pedido.is_(None),
+                func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+            ),
+        )
     )
     if usuario_id is not None:
         try:
@@ -395,7 +411,15 @@ async def exportar_faturas_mensal(
     stmt = (
         select(Venda)
         .options(selectinload(Venda.itens), selectinload(Venda.cliente), selectinload(Venda.usuario))
-        .where(Venda.created_at >= d1, Venda.created_at < d2, Venda.cancelada == False)
+        .where(
+            Venda.created_at >= d1,
+            Venda.created_at < d2,
+            Venda.cancelada == False,
+            or_(
+                Venda.status_pedido.is_(None),
+                func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+            ),
+        )
         .order_by(Venda.created_at.asc())
     )
 

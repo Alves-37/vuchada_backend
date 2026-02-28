@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_admin_user, get_tenant_id
+from app.core.deps import get_current_admin_user, get_current_user, get_tenant_id
 from app.db.database import get_db_session
 from app.db.models import Produto, Venda, ItemVenda
 
@@ -92,7 +92,7 @@ async def criar_pedido(
     payload: PedidoCreateIn,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    user=Depends(get_current_admin_user),
+    user=Depends(get_current_user),
 ):
     """Cria um pedido de mesa (restaurante).
 
@@ -203,7 +203,7 @@ async def listar_pedidos(
     limit: int = 200,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    user=Depends(get_current_admin_user),
+    user=Depends(get_current_user),
 ):
     limit = max(1, min(500, int(limit)))
 
@@ -261,7 +261,7 @@ async def obter_pedido(
     pedido_uuid: str,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    user=Depends(get_current_admin_user),
+    user=Depends(get_current_user),
 ):
     try:
         vid = uuid.UUID(str(pedido_uuid))

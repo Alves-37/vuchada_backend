@@ -171,7 +171,23 @@ async def criar_venda(
                 db.add(item)
         
         await db.commit()
-        await db.refresh(nova_venda)
+        # Evitar MissingGreenlet ao serializar response_model:
+        # garantir que relações (itens/cliente/usuario) estejam carregadas antes de retornar.
+        result_venda = await db.execute(
+            select(Venda)
+            .options(
+                selectinload(Venda.itens).selectinload(ItemVenda.produto),
+                selectinload(Venda.cliente),
+                selectinload(Venda.usuario),
+            )
+            .where(Venda.id == nova_venda.id, Venda.tenant_id == tenant_id)
+        )
+        nova_venda = result_venda.scalar_one()
+
+        try:
+            setattr(nova_venda, 'usuario_nome', getattr(getattr(nova_venda, 'usuario', None), 'nome', None))
+        except Exception:
+            setattr(nova_venda, 'usuario_nome', None)
 
         # Broadcast evento em tempo real para clientes conectados
         try:

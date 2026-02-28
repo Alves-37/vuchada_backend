@@ -20,6 +20,36 @@ DEFAULT_MERCEARIA_TENANT_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+async def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: AsyncSession = Depends(get_db_session),
+) -> User:
+    """Decodifica o JWT e retorna o usuário atual (admin ou funcionário)."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        user_id: str | None = payload.get("user_id")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise credentials_exception
+
+    if not user.ativo:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+
+    return user
+
+
 async def get_current_admin_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: AsyncSession = Depends(get_db_session),

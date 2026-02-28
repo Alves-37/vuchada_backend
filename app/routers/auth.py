@@ -34,9 +34,22 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if not user.ativo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 
-    # Permitir login online apenas para administradores
-    if not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not allowed to access online system")
+    # Permitir login também para funcionários (não-admin), com permissões limitadas no backend.
 
-    access_token = create_access_token(data={"sub": user.usuario, "user_id": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+    access_token = create_access_token(
+        data={
+            "sub": user.usuario,
+            "user_id": str(user.id),
+            "is_admin": bool(getattr(user, "is_admin", False)),
+        }
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "usuario": str(user.usuario),
+            "nome": getattr(user, "nome", None),
+            "is_admin": bool(getattr(user, "is_admin", False)),
+        },
+    }

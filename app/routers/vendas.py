@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.orm import selectinload
 from typing import List
 import uuid
@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db.models import Produto, Venda, ItemVenda, User
 from app.core.realtime import manager as realtime_manager
 from ..schemas.venda import VendaCreate, VendaUpdate, VendaResponse
-from ..core.deps import get_tenant_id
+from ..core.deps import get_tenant_id, get_current_user
 
 router = APIRouter(prefix="/api/vendas", tags=["vendas"])
 
@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/vendas", tags=["vendas"])
 async def listar_vendas(
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Lista todas as vendas."""
     try:
@@ -29,7 +30,11 @@ async def listar_vendas(
                 selectinload(Venda.cliente),
                 selectinload(Venda.usuario),
             )
-            .where(Venda.cancelada == False, Venda.tenant_id == tenant_id)
+            .where(
+                Venda.cancelada == False,
+                Venda.tenant_id == tenant_id,
+                *( [Venda.usuario_id == user.id] if not bool(getattr(user, 'is_admin', False)) else [] ),
+            )
         )
         vendas = result.scalars().all()
         # Injetar nome do usuário (vendedor) para o schema incluir
@@ -47,6 +52,7 @@ async def obter_venda(
     venda_id: str,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Obtém uma venda específica por UUID."""
     try:
@@ -57,7 +63,11 @@ async def obter_venda(
                 selectinload(Venda.cliente),
                 selectinload(Venda.usuario),
             )
-            .where(Venda.id == venda_id, Venda.tenant_id == tenant_id)
+            .where(
+                Venda.id == venda_id,
+                Venda.tenant_id == tenant_id,
+                *( [Venda.usuario_id == user.id] if not bool(getattr(user, 'is_admin', False)) else [] ),
+            )
         )
         venda = result.scalar_one_or_none()
         
@@ -79,6 +89,7 @@ async def criar_venda(
     venda: VendaCreate,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Cria uma nova venda."""
     try:
@@ -98,31 +109,41 @@ async def criar_venda(
             except ValueError:
                 cliente_uuid = None
         
-        # Converter usuario_id se fornecido
+        # Usuário da venda:
+        # - Funcionário: sempre amarrar no próprio usuário.
+        # - Admin: pode informar usuario_id (opcional).
         usuario_uuid = None
-        if hasattr(venda, 'usuario_id') and venda.usuario_id:
-            try:
-                usuario_uuid = uuid.UUID(venda.usuario_id)
-            except ValueError:
-                usuario_uuid = None
+        if bool(getattr(user, 'is_admin', False)):
+            if hasattr(venda, 'usuario_id') and venda.usuario_id:
+                try:
+                    usuario_uuid = uuid.UUID(venda.usuario_id)
+                except ValueError:
+                    usuario_uuid = None
+        else:
+            usuario_uuid = getattr(user, 'id', None)
 
-        nova_venda = Venda(
-            id=venda_uuid,
-            tenant_id=tenant_id,
-            usuario_id=usuario_uuid,
-            cliente_id=cliente_uuid,
-            total=venda.total,
-            desconto=venda.desconto or 0.0,
-            forma_pagamento=venda.forma_pagamento,
-            tipo_pedido=getattr(venda, 'tipo_pedido', None),
-            status_pedido=getattr(venda, 'status_pedido', None),
-            mesa_id=getattr(venda, 'mesa_id', None),
-            lugar_numero=getattr(venda, 'lugar_numero', None),
-            observacoes=venda.observacoes,
-            cancelada=False,
-            # Preservar a data original da venda, se enviada pelo cliente
-            created_at=venda.created_at if getattr(venda, 'created_at', None) else None
-        )
+        venda_kwargs = {
+            "id": venda_uuid,
+            "tenant_id": tenant_id,
+            "usuario_id": usuario_uuid,
+            "cliente_id": cliente_uuid,
+            "total": venda.total,
+            "desconto": venda.desconto or 0.0,
+            "forma_pagamento": venda.forma_pagamento,
+            "tipo_pedido": getattr(venda, "tipo_pedido", None),
+            "status_pedido": getattr(venda, "status_pedido", None),
+            "mesa_id": getattr(venda, "mesa_id", None),
+            "lugar_numero": getattr(venda, "lugar_numero", None),
+            "observacoes": venda.observacoes,
+            "cancelada": False,
+        }
+
+        # Preservar a data original da venda, se enviada pelo cliente.
+        # Se não vier, não setar para evitar gravar NULL e quebrar métricas por data.
+        if getattr(venda, "created_at", None) is not None:
+            venda_kwargs["created_at"] = venda.created_at
+
+        nova_venda = Venda(**venda_kwargs)
         
         db.add(nova_venda)
         await db.flush()  # Para obter o ID da venda
@@ -230,11 +251,15 @@ async def atualizar_venda(
     venda: VendaUpdate,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Atualiza uma venda existente."""
     try:
         # Buscar venda existente
-        result = await db.execute(select(Venda).where(Venda.id == venda_id, Venda.tenant_id == tenant_id))
+        base_where = [Venda.id == venda_id, Venda.tenant_id == tenant_id]
+        if not bool(getattr(user, 'is_admin', False)):
+            base_where.append(Venda.usuario_id == user.id)
+        result = await db.execute(select(Venda).where(*base_where))
         venda_existente = result.scalar_one_or_none()
         
         if not venda_existente:
@@ -247,12 +272,13 @@ async def atualizar_venda(
                 update_data[Venda.cliente_id] = uuid.UUID(venda.cliente_id) if venda.cliente_id else None
             except ValueError:
                 update_data[Venda.cliente_id] = None
-        # Atualizar usuario_id (UUID) se fornecido
-        if hasattr(venda, 'usuario_id') and venda.usuario_id is not None:
-            try:
-                update_data[Venda.usuario_id] = uuid.UUID(venda.usuario_id) if venda.usuario_id else None
-            except ValueError:
-                update_data[Venda.usuario_id] = None
+        # Atualizar usuario_id só se admin
+        if bool(getattr(user, 'is_admin', False)):
+            if hasattr(venda, 'usuario_id') and venda.usuario_id is not None:
+                try:
+                    update_data[Venda.usuario_id] = uuid.UUID(venda.usuario_id) if venda.usuario_id else None
+                except ValueError:
+                    update_data[Venda.usuario_id] = None
         if venda.total is not None:
             update_data[Venda.total] = venda.total
         if venda.desconto is not None:
@@ -427,6 +453,7 @@ async def listar_vendas_periodo(
     offset: int = 0,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Listar vendas em um período específico com paginação."""
     try:
@@ -452,14 +479,28 @@ async def listar_vendas_periodo(
         # Padrão: excluir vendas canceladas (consistente com listar_vendas)
         stmt = stmt.where(Venda.cancelada == False)
 
-        # Filtrar por usuário se especificado e válido (UUID)
-        if usuario_id is not None:
-            try:
-                usuario_uuid = uuid.UUID(usuario_id)
-                stmt = stmt.where(Venda.usuario_id == usuario_uuid)
-            except Exception:
-                # Ignora filtro se não for UUID válido
-                pass
+        # Restaurante: só considerar como venda efetiva quando status_pedido == 'pago'.
+        # Mercearia (legado): status_pedido normalmente é NULL.
+        stmt = stmt.where(
+            or_(
+                Venda.status_pedido.is_(None),
+                func.lower(func.coalesce(Venda.status_pedido, "")) == "pago",
+            )
+        )
+
+        # Filtrar por usuário:
+        # - Funcionário: sempre forçar o próprio usuário.
+        # - Admin: pode filtrar por usuario_id (se válido) ou ver todos.
+        if not bool(getattr(user, 'is_admin', False)):
+            stmt = stmt.where(Venda.usuario_id == user.id)
+        else:
+            if usuario_id is not None:
+                try:
+                    usuario_uuid = uuid.UUID(usuario_id)
+                    stmt = stmt.where(Venda.usuario_id == usuario_uuid)
+                except Exception:
+                    # Ignora filtro se não for UUID válido
+                    pass
         
         # Ordenar por data mais recente
         stmt = stmt.order_by(Venda.created_at.desc())
@@ -493,9 +534,16 @@ async def cancelar_venda(
     venda_id: str,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user: User = Depends(get_current_user),
 ):
     """Anula (cancela) uma venda (cancelada=True)."""
     try:
+        # Funcionário só pode cancelar a própria venda
+        if not bool(getattr(user, 'is_admin', False)):
+            res_owner = await db.execute(select(Venda).where(Venda.id == venda_id, Venda.tenant_id == tenant_id, Venda.usuario_id == user.id))
+            if not res_owner.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Venda não encontrada")
+
         # Atualizar flag cancelada
         await db.execute(
             update(Venda)

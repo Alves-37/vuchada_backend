@@ -8,7 +8,7 @@ import uuid
 
 from ..db.database import get_db_session
 from ..db.models import Venda, ItemVenda, Produto
-from ..core.deps import get_tenant_id
+from ..core.deps import get_tenant_id, get_current_user
 
 router = APIRouter(prefix="/api/metricas", tags=["metricas"]) 
 
@@ -36,6 +36,7 @@ async def vendas_dia(
     data: str | None = Query(default=None, description="Data no formato YYYY-MM-DD (timezone do cliente)"),
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user=Depends(get_current_user),
 ):
     """Retorna o total de vendas (não canceladas) do dia informado (ou dia atual)."""
     # Data alvo: usar a recebida do cliente ou o dia do servidor
@@ -80,6 +81,7 @@ async def vendas_mes(
     ano_mes: str | None = Query(default=None, description="Ano-mês no formato YYYY-MM (timezone do cliente)"),
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user=Depends(get_current_user),
 ):
     """Retorna o total de vendas (não canceladas) do mês informado (ou mês atual)."""
     try:
@@ -141,6 +143,7 @@ async def vendas_mes(
 async def metricas_estoque(
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user=Depends(get_current_user),
 ):
     """Retorna métricas de estoque: valor_estoque (custo), valor_potencial (venda) e lucro_potencial.
 

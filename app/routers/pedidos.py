@@ -230,6 +230,9 @@ async def listar_pedidos(
             mid = None
         if mid is not None:
             stmt = stmt.where(Venda.mesa_id == mid)
+    else:
+        # Evitar misturar vendas de balcão com pedidos: pedidos de mesa sempre têm mesa_id > 0.
+        stmt = stmt.where(Venda.mesa_id.is_not(None), Venda.mesa_id > 0)
 
     # Restaurante: pedidos são vendas com tipo_pedido preenchido ou mesa_id/lugar_numero.
     # Não aplicamos filtro rígido aqui para manter compatibilidade com mercearia, mas o PDV web pode filtrar.

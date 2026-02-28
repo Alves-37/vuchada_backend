@@ -56,6 +56,25 @@ class PedidoStatusUpdate(BaseModel):
     status: str
 
 
+class PedidoItemIn(BaseModel):
+    produto_id: str
+    quantidade: int
+
+
+class PedidoCreateIn(BaseModel):
+    mesa_id: int
+    lugar_numero: Optional[int] = None
+    cliente_id: Optional[str] = None
+    observacoes: Optional[str] = None
+    itens: list[PedidoItemIn]
+
+
+class PedidoCreateOut(BaseModel):
+    pedido_uuid: str
+    pedido_id: str
+    status: str
+
+
 def _resolve_status(v: Venda) -> str:
     status_pedido = (getattr(v, "status_pedido", None) or "").strip()
     if status_pedido:
@@ -66,6 +85,114 @@ def _resolve_status(v: Venda) -> str:
     if fp == "PENDENTE_PAGAMENTO":
         return "criado"
     return "aguardando_pagamento"
+
+
+@router.post("/", response_model=PedidoCreateOut)
+async def criar_pedido(
+    payload: PedidoCreateIn,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user=Depends(get_current_admin_user),
+):
+    """Cria um pedido de mesa (restaurante).
+
+    Observação: Persistimos em `vendas` para manter compatibilidade, mas não deve
+    ser contabilizado como venda até `status_pedido='pago'`.
+    """
+    try:
+        if not payload.itens:
+            raise HTTPException(status_code=400, detail="Pedido sem itens")
+
+        mesa_id = int(payload.mesa_id)
+        if mesa_id <= 0:
+            raise HTTPException(status_code=400, detail="mesa_id inválido")
+
+        lugar = int(payload.lugar_numero) if payload.lugar_numero is not None else None
+        if lugar is not None and lugar <= 0:
+            raise HTTPException(status_code=400, detail="lugar_numero inválido")
+
+        cliente_uuid = None
+        if payload.cliente_id:
+            try:
+                cliente_uuid = uuid.UUID(str(payload.cliente_id))
+            except Exception:
+                cliente_uuid = None
+
+        pedido_uuid = uuid.uuid4()
+        v = Venda(
+            id=pedido_uuid,
+            tenant_id=tenant_id,
+            usuario_id=None,
+            cliente_id=cliente_uuid,
+            total=0.0,
+            desconto=0.0,
+            forma_pagamento="PENDENTE_PAGAMENTO",
+            tipo_pedido="local",
+            status_pedido="aberto",
+            mesa_id=mesa_id,
+            lugar_numero=lugar,
+            observacoes=payload.observacoes,
+            cancelada=False,
+            created_at=datetime.utcnow(),
+        )
+        db.add(v)
+        await db.flush()
+
+        total = 0.0
+        for it in payload.itens:
+            try:
+                produto_uuid = uuid.UUID(str(it.produto_id))
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"produto_id inválido: {it.produto_id}")
+
+            res_prod = await db.execute(
+                select(Produto).where(Produto.id == produto_uuid, Produto.tenant_id == tenant_id)
+            )
+            produto = res_prod.scalar_one_or_none()
+            if not produto:
+                raise HTTPException(status_code=400, detail=f"Produto inexistente no servidor: {it.produto_id}")
+
+            qtd = max(1, int(it.quantidade or 0))
+            preco_unit = float(getattr(produto, "preco_venda", 0.0) or 0.0)
+            subtotal = float(preco_unit * qtd)
+
+            taxa_iva = float(getattr(produto, "taxa_iva", 0.0) or 0.0)
+            if taxa_iva > 0:
+                fator = 1 + (taxa_iva / 100.0)
+                base_iva = subtotal / fator
+                valor_iva = subtotal - base_iva
+            else:
+                base_iva = subtotal
+                valor_iva = 0.0
+
+            db.add(
+                ItemVenda(
+                    venda_id=v.id,
+                    produto_id=produto_uuid,
+                    quantidade=qtd,
+                    peso_kg=0.0,
+                    preco_unitario=preco_unit,
+                    subtotal=subtotal,
+                    taxa_iva=taxa_iva,
+                    base_iva=base_iva,
+                    valor_iva=valor_iva,
+                )
+            )
+            total += subtotal
+
+        v.total = float(total)
+        await db.commit()
+        return PedidoCreateOut(
+            pedido_uuid=str(v.id),
+            pedido_id=str(v.id)[:8],
+            status=str(getattr(v, "status_pedido", None) or "aberto"),
+        )
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao criar pedido: {str(e)}")
 
 
 @router.get("/", response_model=list[PedidoListItem])

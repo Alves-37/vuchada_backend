@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_admin_user, get_current_user, get_tenant_id
 from app.db.database import get_db_session
@@ -23,6 +24,9 @@ class PedidoListItem(BaseModel):
     tipo_pedido: Optional[str] = None
     status: str
     total: float
+    usuario_nome: Optional[str] = None
+    status_updated_by_nome: Optional[str] = None
+    status_updated_at: Optional[datetime] = None
     mesa_id: Optional[int] = None
     lugar_numero: Optional[int] = None
     distancia_tipo: Optional[str] = None
@@ -40,6 +44,7 @@ class PedidoDetail(BaseModel):
     status: str
     total: float
     taxa_entrega: float = 0.0
+    usuario_nome: Optional[str] = None
     mesa_id: Optional[int] = None
     lugar_numero: Optional[int] = None
     distancia_tipo: Optional[str] = None
@@ -120,9 +125,9 @@ async def criar_pedido(
 
         pedido_uuid = uuid.uuid4()
         v = Venda(
-            id=pedido_uuid,
+            id=uuid.uuid4(),
             tenant_id=tenant_id,
-            usuario_id=None,
+            usuario_id=getattr(user, "id", None),
             cliente_id=cliente_uuid,
             total=0.0,
             desconto=0.0,
@@ -209,6 +214,7 @@ async def listar_pedidos(
 
     stmt = (
         select(Venda)
+        .options(selectinload(Venda.usuario))
         .where(Venda.tenant_id == tenant_id)
         .order_by(Venda.created_at.desc())
         .limit(limit)
@@ -243,6 +249,9 @@ async def listar_pedidos(
                 tipo_pedido=getattr(v, "tipo_pedido", None),
                 status=s,
                 total=float(getattr(v, "total", 0.0) or 0.0),
+                usuario_nome=getattr(getattr(v, "usuario", None), "nome", None),
+                status_updated_by_nome=getattr(v, "status_updated_by_nome", None),
+                status_updated_at=getattr(v, "status_updated_at", None),
                 mesa_id=getattr(v, "mesa_id", None),
                 lugar_numero=getattr(v, "lugar_numero", None),
                 distancia_tipo=getattr(v, "distancia_tipo", None),
@@ -268,7 +277,11 @@ async def obter_pedido(
     except Exception:
         raise HTTPException(status_code=400, detail="pedido_uuid inválido")
 
-    res = await db.execute(select(Venda).where(Venda.id == vid, Venda.tenant_id == tenant_id))
+    res = await db.execute(
+        select(Venda)
+        .options(selectinload(Venda.usuario))
+        .where(Venda.id == vid, Venda.tenant_id == tenant_id)
+    )
     v = res.scalar_one_or_none()
     if not v:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
@@ -303,6 +316,9 @@ async def obter_pedido(
         status=_resolve_status(v),
         total=total_base,
         taxa_entrega=taxa_entrega,
+        usuario_nome=getattr(getattr(v, "usuario", None), "nome", None),
+        status_updated_by_nome=getattr(v, "status_updated_by_nome", None),
+        status_updated_at=getattr(v, "status_updated_at", None),
         mesa_id=getattr(v, "mesa_id", None),
         lugar_numero=getattr(v, "lugar_numero", None),
         distancia_tipo=getattr(v, "distancia_tipo", None),
@@ -339,6 +355,11 @@ async def atualizar_status_pedido(
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
     v.status_pedido = novo
+    try:
+        v.status_updated_by_nome = str(getattr(user, "nome", None) or getattr(user, "usuario", None) or "") or None
+    except Exception:
+        v.status_updated_by_nome = None
+    v.status_updated_at = datetime.utcnow()
     if novo in ("cancelado", "cancelada"):
         v.cancelada = True
     await db.commit()

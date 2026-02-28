@@ -91,6 +91,8 @@ class Venda(DeclarativeBase):
     endereco_entrega: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     taxa_entrega: Mapped[float] = mapped_column(Float, default=0.0)
     observacoes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status_updated_by_nome: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    status_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelada: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Relacionamentos

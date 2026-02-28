@@ -119,6 +119,10 @@ async def lifespan(app: FastAPI):
             ]:
                 await conn.execute(text(f"UPDATE {table} SET tenant_id = :tid WHERE tenant_id IS NULL"), {"tid": tenant_uuid})
 
+            # Auditoria de pedidos: rastrear quem alterou status e quando.
+            await conn.execute(text("ALTER TABLE pdv.vendas ADD COLUMN IF NOT EXISTS status_updated_by_nome VARCHAR(100)"))
+            await conn.execute(text("ALTER TABLE pdv.vendas ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ"))
+
         # Garantir usuário técnico Neotrix para autoLogin do PDV online
         async with AsyncSessionLocal() as session:
             result = await session.execute(

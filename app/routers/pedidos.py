@@ -341,7 +341,7 @@ async def atualizar_status_pedido(
     payload: PedidoStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    user=Depends(get_current_admin_user),
+    user=Depends(get_current_user),
 ):
     novo = (payload.status or "").strip().lower()
     if not novo:
@@ -356,6 +356,11 @@ async def atualizar_status_pedido(
     v = res.scalar_one_or_none()
     if not v:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+    # Regra definitiva: pedido pago não pode voltar/ser alterado.
+    status_atual = (getattr(v, "status_pedido", None) or "").strip().lower()
+    if status_atual == "pago":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pedido já está pago e não pode ser alterado")
 
     v.status_pedido = novo
     try:

@@ -198,6 +198,7 @@ async def criar_pedido(
 @router.get("/", response_model=list[PedidoListItem])
 async def listar_pedidos(
     status_filter: Optional[str] = None,
+    mesa_id: Optional[int] = None,
     incluir_cancelados: bool = False,
     limit: int = 200,
     db: AsyncSession = Depends(get_db_session),
@@ -215,6 +216,14 @@ async def listar_pedidos(
 
     if not incluir_cancelados:
         stmt = stmt.where(Venda.cancelada == False)
+
+    if mesa_id is not None:
+        try:
+            mid = int(mesa_id)
+        except Exception:
+            mid = None
+        if mid is not None:
+            stmt = stmt.where(Venda.mesa_id == mid)
 
     # Restaurante: pedidos são vendas com tipo_pedido preenchido ou mesa_id/lugar_numero.
     # Não aplicamos filtro rígido aqui para manter compatibilidade com mercearia, mas o PDV web pode filtrar.

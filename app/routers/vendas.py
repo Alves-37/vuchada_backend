@@ -114,6 +114,10 @@ async def criar_venda(
             total=venda.total,
             desconto=venda.desconto or 0.0,
             forma_pagamento=venda.forma_pagamento,
+            tipo_pedido=getattr(venda, 'tipo_pedido', None),
+            status_pedido=getattr(venda, 'status_pedido', None),
+            mesa_id=getattr(venda, 'mesa_id', None),
+            lugar_numero=getattr(venda, 'lugar_numero', None),
             observacoes=venda.observacoes,
             cancelada=False,
             # Preservar a data original da venda, se enviada pelo cliente
@@ -239,6 +243,14 @@ async def atualizar_venda(
             update_data[Venda.desconto] = venda.desconto
         if venda.forma_pagamento is not None:
             update_data[Venda.forma_pagamento] = venda.forma_pagamento
+        if getattr(venda, 'tipo_pedido', None) is not None:
+            update_data[Venda.tipo_pedido] = venda.tipo_pedido
+        if getattr(venda, 'status_pedido', None) is not None:
+            update_data[Venda.status_pedido] = venda.status_pedido
+        if getattr(venda, 'mesa_id', None) is not None:
+            update_data[Venda.mesa_id] = venda.mesa_id
+        if getattr(venda, 'lugar_numero', None) is not None:
+            update_data[Venda.lugar_numero] = venda.lugar_numero
         if venda.observacoes is not None:
             update_data[Venda.observacoes] = venda.observacoes
         if venda.cancelada is not None:

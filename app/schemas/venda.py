@@ -49,6 +49,10 @@ class VendaBase(BaseModel):
     desconto: Optional[float] = Field(0.0, ge=0)
     forma_pagamento: str = Field(..., min_length=1, max_length=50)
     observacoes: Optional[str] = None
+    tipo_pedido: Optional[str] = None
+    status_pedido: Optional[str] = None
+    mesa_id: Optional[int] = None
+    lugar_numero: Optional[int] = None
 
 class VendaCreate(VendaBase):
     uuid: Optional[str] = None
@@ -63,6 +67,10 @@ class VendaUpdate(BaseModel):
     forma_pagamento: Optional[str] = Field(None, min_length=1, max_length=50)
     observacoes: Optional[str] = None
     cancelada: Optional[bool] = None
+    tipo_pedido: Optional[str] = None
+    status_pedido: Optional[str] = None
+    mesa_id: Optional[int] = None
+    lugar_numero: Optional[int] = None
 
 class VendaResponse(VendaBase):
     id: str

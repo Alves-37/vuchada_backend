@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -93,15 +93,56 @@ async def obter_turno_ativo(
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     user=Depends(get_current_user),
 ):
-    res = await db.execute(
+    now = datetime.now(timezone.utc)
+
+    # 1) Preferir turno já marcado como ativo
+    res_ativo = await db.execute(
         select(Turno)
         .options(selectinload(Turno.membros).selectinload(TurnoMembro.usuario))
         .where(Turno.tenant_id == tenant_id, Turno.ativo == True)
         .order_by(Turno.created_at.desc())
         .limit(1)
     )
-    t = res.scalars().first()
-    return _turno_to_out(t) if t else None
+    ativo = res_ativo.scalars().first()
+
+    # Se existe ativo mas está fora da janela (quando janela está definida), desativar
+    if ativo:
+        inicio = getattr(ativo, "inicio", None)
+        fim = getattr(ativo, "fim", None)
+        if inicio and fim and not (inicio <= now <= fim):
+            await db.execute(update(Turno).where(Turno.id == ativo.id, Turno.tenant_id == tenant_id).values({Turno.ativo: False}))
+            await db.commit()
+            ativo = None
+
+    # 2) Auto ativar pelo horário (inicio <= now <= fim)
+    if not ativo:
+        res_sched = await db.execute(
+            select(Turno)
+            .options(selectinload(Turno.membros).selectinload(TurnoMembro.usuario))
+            .where(
+                Turno.tenant_id == tenant_id,
+                Turno.inicio.is_not(None),
+                Turno.fim.is_not(None),
+                Turno.inicio <= now,
+                Turno.fim >= now,
+            )
+            .order_by(Turno.inicio.desc())
+            .limit(1)
+        )
+        candidato = res_sched.scalars().first()
+        if candidato:
+            await db.execute(update(Turno).where(Turno.tenant_id == tenant_id).values({Turno.ativo: False}))
+            await db.execute(update(Turno).where(Turno.id == candidato.id, Turno.tenant_id == tenant_id).values({Turno.ativo: True}))
+            await db.commit()
+
+            res_full = await db.execute(
+                select(Turno)
+                .options(selectinload(Turno.membros).selectinload(TurnoMembro.usuario))
+                .where(Turno.id == candidato.id, Turno.tenant_id == tenant_id)
+            )
+            ativo = res_full.scalar_one_or_none()
+
+    return _turno_to_out(ativo) if ativo else None
 
 
 @router.get("/", response_model=list[TurnoOut])

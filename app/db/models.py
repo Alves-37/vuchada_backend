@@ -117,6 +117,7 @@ class Turno(DeclarativeBase):
     __table_args__ = {"schema": PDV_SCHEMA}
 
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    turno_slot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     nome: Mapped[str] = mapped_column(String(80), nullable=False)
     inicio: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fim: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

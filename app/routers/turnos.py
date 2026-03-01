@@ -39,6 +39,7 @@ class TurnoMembroOut(BaseModel):
 
 class TurnoOut(BaseModel):
     id: str
+    turno_slot: Optional[int] = None
     nome: str
     inicio: Optional[datetime] = None
     fim: Optional[datetime] = None
@@ -50,6 +51,7 @@ class TurnoOut(BaseModel):
 
 
 class TurnoCreate(BaseModel):
+    turno_slot: Optional[int] = None
     nome: str
     inicio: Optional[datetime] = None
     fim: Optional[datetime] = None
@@ -59,6 +61,7 @@ class TurnoCreate(BaseModel):
 
 
 class TurnoUpdate(BaseModel):
+    turno_slot: Optional[int] = None
     nome: Optional[str] = None
     inicio: Optional[datetime] = None
     fim: Optional[datetime] = None
@@ -93,6 +96,7 @@ def _turno_to_out(t: Turno) -> TurnoOut:
         )
     return TurnoOut(
         id=str(getattr(t, "id")),
+        turno_slot=getattr(t, "turno_slot", None),
         nome=str(getattr(t, "nome")),
         inicio=getattr(t, "inicio", None),
         fim=getattr(t, "fim", None),
@@ -116,7 +120,19 @@ def _parse_dias_semana(value: Optional[str]) -> Optional[list[int]]:
             out.append(int(part))
         except Exception:
             continue
-    return out or None
+    if not out:
+        return None
+
+    # Compatibilidade: alguns registros podem estar como 1..7 (Seg=1..Dom=7)
+    # Convertemos para 0..6 (Seg=0..Dom=6)
+    has_7 = any(d == 7 for d in out)
+    has_0 = any(d == 0 for d in out)
+    if has_7 and not has_0:
+        out = [((d - 1) % 7) for d in out if 1 <= d <= 7]
+
+    cleaned = [d for d in out if 0 <= d <= 6]
+    cleaned = sorted(set(cleaned))
+    return cleaned or None
 
 
 def _dias_to_str(dias: Optional[list[int]]) -> Optional[str]:
@@ -285,8 +301,21 @@ async def criar_turno(
     if not nome:
         raise HTTPException(status_code=400, detail="nome é obrigatório")
 
+    slot = payload.turno_slot
+    if slot is not None:
+        try:
+            slot = int(slot)
+        except Exception:
+            raise HTTPException(status_code=400, detail="turno_slot inválido")
+        if slot not in (1, 2):
+            raise HTTPException(status_code=400, detail="turno_slot inválido")
+        res_slot = await db.execute(select(Turno).where(Turno.tenant_id == tenant_id, Turno.turno_slot == slot))
+        if res_slot.scalars().first():
+            raise HTTPException(status_code=400, detail="Esse turno já existe")
+
     t = Turno(
         tenant_id=tenant_id,
+        turno_slot=slot,
         nome=nome,
         inicio=payload.inicio,
         fim=payload.fim,
@@ -347,6 +376,23 @@ async def atualizar_turno(
         if not nome:
             raise HTTPException(status_code=400, detail="nome inválido")
         t.nome = nome
+    if payload.turno_slot is not None:
+        slot = payload.turno_slot
+        if slot is None:
+            t.turno_slot = None
+        else:
+            try:
+                slot = int(slot)
+            except Exception:
+                raise HTTPException(status_code=400, detail="turno_slot inválido")
+            if slot not in (1, 2):
+                raise HTTPException(status_code=400, detail="turno_slot inválido")
+            res_slot = await db.execute(
+                select(Turno).where(Turno.tenant_id == tenant_id, Turno.turno_slot == slot, Turno.id != tid)
+            )
+            if res_slot.scalars().first():
+                raise HTTPException(status_code=400, detail="Esse turno já existe")
+            t.turno_slot = slot
     if payload.inicio is not None:
         t.inicio = payload.inicio
     if payload.fim is not None:

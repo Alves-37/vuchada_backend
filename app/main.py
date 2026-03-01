@@ -145,6 +145,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turnos_ativo ON pdv.turnos (ativo)"))
 
             # Turnos recorrentes (dias da semana + hora)
+            await conn.execute(text("ALTER TABLE pdv.turnos ADD COLUMN IF NOT EXISTS turno_slot INTEGER"))
             await conn.execute(text("ALTER TABLE pdv.turnos ADD COLUMN IF NOT EXISTS dias_semana VARCHAR(20)"))
             await conn.execute(text("ALTER TABLE pdv.turnos ADD COLUMN IF NOT EXISTS hora_inicio TIME"))
             await conn.execute(text("ALTER TABLE pdv.turnos ADD COLUMN IF NOT EXISTS hora_fim TIME"))

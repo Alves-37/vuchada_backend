@@ -50,6 +50,7 @@ async def reset_dados_online(
 ):
     try:
         # Reset completo do tenant (preserva backups)
+        await db.execute(text("DELETE FROM pdv.payment_transactions WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(
             text(
                 """
@@ -92,7 +93,6 @@ async def reset_dados_online(
         )
         await db.execute(text("DELETE FROM pdv.turnos WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
 
-        await db.execute(text("DELETE FROM pdv.payment_transactions WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.mesas WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.produtos WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.clientes WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
@@ -253,6 +253,7 @@ async def restaurar_backup_vendas(
     itens = snapshot.get("itens_venda") or []
 
     try:
+        await db.execute(text("DELETE FROM pdv.payment_transactions WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(
             text(
                 """
@@ -494,6 +495,7 @@ async def restaurar_backup_tenant(
 
     try:
         # Limpar dados atuais do tenant (não apaga backups)
+        await db.execute(text("DELETE FROM pdv.payment_transactions WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(
             text(
                 """
@@ -536,7 +538,6 @@ async def restaurar_backup_tenant(
         )
         await db.execute(text("DELETE FROM pdv.turnos WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
 
-        await db.execute(text("DELETE FROM pdv.payment_transactions WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.mesas WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.produtos WHERE tenant_id = :tid"), {"tid": str(tenant_id)})
         await db.execute(text("DELETE FROM pdv.clientes WHERE tenant_id = :tid"), {"tid": str(tenant_id)})

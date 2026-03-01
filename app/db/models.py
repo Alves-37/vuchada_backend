@@ -112,6 +112,32 @@ class Mesa(DeclarativeBase):
     mesa_token: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
 
 
+class Turno(DeclarativeBase):
+    __tablename__ = "turnos"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    nome: Mapped[str] = mapped_column(String(80), nullable=False)
+    inicio: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    fim: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    membros: Mapped[list["TurnoMembro"]] = relationship("TurnoMembro", back_populates="turno")
+
+
+class TurnoMembro(DeclarativeBase):
+    __tablename__ = "turno_membros"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    turno_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.turnos.id"), nullable=False, index=True)
+    usuario_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey(f"{PDV_SCHEMA}.usuarios.id"), nullable=False, index=True)
+    papel: Mapped[str] = mapped_column(String(30), default="funcionario")
+    is_chefe: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    turno: Mapped["Turno"] = relationship("Turno", back_populates="membros")
+    usuario: Mapped[Optional["User"]] = relationship("User")
+
+
 class ItemVenda(DeclarativeBase):
     __tablename__ = "itens_venda"
     __table_args__ = {"schema": PDV_SCHEMA}

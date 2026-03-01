@@ -14,6 +14,7 @@ from app.routers import payments
 from app.routers import public_distancia
 from app.routers import mesas
 from app.routers import pedidos
+from app.routers import turnos
 from app.db.session import engine, AsyncSessionLocal
 from app.db.base import DeclarativeBase
 from app.db.models import User
@@ -122,6 +123,44 @@ async def lifespan(app: FastAPI):
             # Auditoria de pedidos: rastrear quem alterou status e quando.
             await conn.execute(text("ALTER TABLE pdv.vendas ADD COLUMN IF NOT EXISTS status_updated_by_nome VARCHAR(100)"))
             await conn.execute(text("ALTER TABLE pdv.vendas ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ"))
+
+            # Turnos (escala): criar tabelas caso não existam.
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdv.turnos (
+                        id UUID PRIMARY KEY,
+                        created_at TIMESTAMPTZ DEFAULT now(),
+                        updated_at TIMESTAMPTZ DEFAULT now(),
+                        tenant_id UUID,
+                        nome VARCHAR(80) NOT NULL,
+                        inicio TIMESTAMPTZ NULL,
+                        fim TIMESTAMPTZ NULL,
+                        ativo BOOLEAN DEFAULT FALSE
+                    );
+                    """
+                )
+            )
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turnos_tenant_id ON pdv.turnos (tenant_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turnos_ativo ON pdv.turnos (ativo)"))
+
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdv.turno_membros (
+                        id UUID PRIMARY KEY,
+                        created_at TIMESTAMPTZ DEFAULT now(),
+                        updated_at TIMESTAMPTZ DEFAULT now(),
+                        turno_id UUID NOT NULL,
+                        usuario_id UUID NOT NULL,
+                        papel VARCHAR(30) DEFAULT 'funcionario',
+                        is_chefe BOOLEAN DEFAULT FALSE
+                    );
+                    """
+                )
+            )
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turno_membros_turno_id ON pdv.turno_membros (turno_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turno_membros_usuario_id ON pdv.turno_membros (usuario_id)"))
 
         # Garantir usuário técnico Neotrix para autoLogin do PDV online
         async with AsyncSessionLocal() as session:
@@ -236,6 +275,7 @@ app.include_router(public_pedidos.router)
 app.include_router(public_distancia.router)
 app.include_router(mesas.router)
 app.include_router(pedidos.router)
+app.include_router(turnos.router)
 app.include_router(usuarios.router)
 app.include_router(clientes.router)
 app.include_router(vendas.router)

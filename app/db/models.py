@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, ForeignKey, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.db.base import DeclarativeBase
 from datetime import datetime, time
 from typing import Optional
@@ -161,6 +161,24 @@ class ItemVenda(DeclarativeBase):
     # Relacionamentos
     venda: Mapped["Venda"] = relationship("Venda", back_populates="itens")
     produto: Mapped["Produto"] = relationship("Produto")
+
+
+class VendaBackup(DeclarativeBase):
+    __tablename__ = "vendas_backups"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class TenantBackup(DeclarativeBase):
+    __tablename__ = "tenant_backups"
+    __table_args__ = {"schema": PDV_SCHEMA}
+
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
 
 class PaymentTransaction(DeclarativeBase):

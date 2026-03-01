@@ -168,6 +168,43 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turno_membros_turno_id ON pdv.turno_membros (turno_id)"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_turno_membros_usuario_id ON pdv.turno_membros (usuario_id)"))
 
+            # Backups de vendas: snapshot (JSONB) por tenant para backup/restauração.
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdv.vendas_backups (
+                        id UUID PRIMARY KEY,
+                        created_at TIMESTAMPTZ DEFAULT now(),
+                        updated_at TIMESTAMPTZ DEFAULT now(),
+                        tenant_id UUID,
+                        nome VARCHAR(120) NOT NULL,
+                        snapshot JSONB NOT NULL
+                    );
+                    """
+                )
+            )
+            await conn.execute(text("ALTER TABLE pdv.vendas_backups ADD COLUMN IF NOT EXISTS tenant_id UUID"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_vendas_backups_tenant_id ON pdv.vendas_backups (tenant_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_vendas_backups_created_at ON pdv.vendas_backups (created_at)"))
+
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdv.tenant_backups (
+                        id UUID PRIMARY KEY,
+                        created_at TIMESTAMPTZ DEFAULT now(),
+                        updated_at TIMESTAMPTZ DEFAULT now(),
+                        tenant_id UUID,
+                        nome VARCHAR(120) NOT NULL,
+                        snapshot JSONB NOT NULL
+                    );
+                    """
+                )
+            )
+            await conn.execute(text("ALTER TABLE pdv.tenant_backups ADD COLUMN IF NOT EXISTS tenant_id UUID"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_tenant_backups_tenant_id ON pdv.tenant_backups (tenant_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pdv_tenant_backups_created_at ON pdv.tenant_backups (created_at)"))
+
         # Garantir usuário técnico Neotrix para autoLogin do PDV online
         async with AsyncSessionLocal() as session:
             result = await session.execute(

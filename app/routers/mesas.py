@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_admin_user, get_tenant_id
+from app.core.deps import get_current_admin_user, get_current_user, get_tenant_id
 from app.db.database import get_db_session
 from app.db.models import Mesa
 
@@ -32,6 +32,10 @@ class MesaUpdate(BaseModel):
     numero: int | None = None
     capacidade: int | None = None
     status: str | None = None
+
+
+class MesaStatusUpdate(BaseModel):
+    status: str
 
 
 async def _ensure_default_mesas(db: AsyncSession, tenant_id: uuid.UUID) -> None:
@@ -99,6 +103,41 @@ async def criar_mesa(
         mesa_token=f"mesa-{numero}",
     )
     db.add(m)
+    await db.commit()
+    await db.refresh(m)
+    return MesaOut(
+        id=int(getattr(m, "id")),
+        numero=int(getattr(m, "numero")),
+        capacidade=int(getattr(m, "capacidade")),
+        status=str(getattr(m, "status")),
+        mesa_token=str(getattr(m, "mesa_token")),
+    )
+
+
+@router.put("/{mesa_id}/status", response_model=MesaOut)
+async def atualizar_status_mesa(
+    mesa_id: int,
+    payload: MesaStatusUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+    user=Depends(get_current_user),
+):
+    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == int(mesa_id)))
+    m = res.scalars().first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Mesa não encontrada")
+
+    st = str(payload.status or "").strip()
+    if not st:
+        raise HTTPException(status_code=400, detail="status inválido")
+
+    # Permitir apenas alguns status padrão (evita bagunça no PDV)
+    st_norm = st.lower()
+    allowed = {"livre": "Livre", "ocupado": "Ocupado", "reservado": "Reservado"}
+    if st_norm not in allowed:
+        raise HTTPException(status_code=400, detail="status inválido")
+    m.status = allowed[st_norm]
+
     await db.commit()
     await db.refresh(m)
     return MesaOut(

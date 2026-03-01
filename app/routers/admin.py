@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import selectinload
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from app.db.database import get_db_session
 from app.core.deps import get_current_admin_user, get_tenant_id
@@ -367,6 +367,54 @@ async def _select_rows(db: AsyncSession, sql: str, params: dict) -> list[dict]:
     return out
 
 
+_DATETIME_KEYS = {
+    "created_at",
+    "updated_at",
+    "status_updated_at",
+    "data_divida",
+    "data_pagamento",
+    "inicio",
+    "fim",
+}
+
+_TIME_KEYS = {"hora_inicio", "hora_fim"}
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    v = (value or "").strip()
+    if not v:
+        return None
+    # fromisoformat não aceita 'Z'
+    if v.endswith("Z"):
+        v = v[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(v)
+    except Exception:
+        return None
+
+
+def _parse_iso_time(value: str) -> time | None:
+    v = (value or "").strip()
+    if not v:
+        return None
+    try:
+        return time.fromisoformat(v)
+    except Exception:
+        return None
+
+
+def _coerce_restore_value(key: str, value):
+    if value is None:
+        return None
+    if isinstance(value, str) and key in _DATETIME_KEYS:
+        parsed = _parse_iso_datetime(value)
+        return parsed if parsed is not None else value
+    if isinstance(value, str) and key in _TIME_KEYS:
+        parsed = _parse_iso_time(value)
+        return parsed if parsed is not None else value
+    return value
+
+
 @router.get("/tenant-backups", response_model=list[TenantBackupOut])
 async def listar_backups_tenant(
     db: AsyncSession = Depends(get_db_session),
@@ -471,7 +519,8 @@ async def _restore_table(db: AsyncSession, table: str, rows: list[dict]) -> None
     val_sql = ", ".join([f":{c}" for c in cols])
     stmt = text(f"INSERT INTO pdv.{table} ({col_sql}) VALUES ({val_sql})")
     for r in rows:
-        await db.execute(stmt, r)
+        coerced = {k: _coerce_restore_value(k, v) for k, v in r.items()}
+        await db.execute(stmt, coerced)
 
 
 @router.post("/tenant-backups/{backup_id}/restaurar")

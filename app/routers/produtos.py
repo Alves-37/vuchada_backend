@@ -311,7 +311,14 @@ async def create_produto(
         )
         
         db.add(produto)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Produto com este código já existe",
+            )
         await db.refresh(produto)
         
         # Broadcast realtime: produto criado
@@ -333,6 +340,12 @@ async def create_produto(
         return ProdutoResponse.from_orm(produto)
     except HTTPException:
         raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Produto com este código já existe",
+        )
     except Exception as e:
         await db.rollback()
         raise HTTPException(

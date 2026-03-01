@@ -1,9 +1,9 @@
-from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, ForeignKey, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import DeclarativeBase
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional
 import uuid
 
@@ -120,6 +120,10 @@ class Turno(DeclarativeBase):
     nome: Mapped[str] = mapped_column(String(80), nullable=False)
     inicio: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fim: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Escala recorrente: dias da semana ("0,1,2" = seg,ter,qua) e hora de início/fim
+    dias_semana: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    hora_inicio: Mapped[Optional[time]] = mapped_column(Time(), nullable=True)
+    hora_fim: Mapped[Optional[time]] = mapped_column(Time(), nullable=True)
     ativo: Mapped[bool] = mapped_column(Boolean, default=False)
 
     membros: Mapped[list["TurnoMembro"]] = relationship("TurnoMembro", back_populates="turno")

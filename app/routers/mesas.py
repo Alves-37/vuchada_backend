@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/mesas", tags=["mesas"])
 
 
 class MesaOut(BaseModel):
-    id: int
+    id: uuid.UUID
     numero: int
     capacidade: int
     status: str
@@ -67,7 +67,7 @@ async def listar_mesas(
     rows = res.scalars().all()
     return [
         MesaOut(
-            id=int(getattr(m, "id")),
+            id=getattr(m, "id"),
             numero=int(getattr(m, "numero")),
             capacidade=int(getattr(m, "capacidade")),
             status=str(getattr(m, "status")),
@@ -106,7 +106,7 @@ async def criar_mesa(
     await db.commit()
     await db.refresh(m)
     return MesaOut(
-        id=int(getattr(m, "id")),
+        id=getattr(m, "id"),
         numero=int(getattr(m, "numero")),
         capacidade=int(getattr(m, "capacidade")),
         status=str(getattr(m, "status")),
@@ -116,13 +116,13 @@ async def criar_mesa(
 
 @router.put("/{mesa_id}/status", response_model=MesaOut)
 async def atualizar_status_mesa(
-    mesa_id: int,
+    mesa_id: uuid.UUID,
     payload: MesaStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     user=Depends(get_current_user),
 ):
-    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == int(mesa_id)))
+    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == mesa_id))
     m = res.scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Mesa não encontrada")
@@ -141,7 +141,7 @@ async def atualizar_status_mesa(
     await db.commit()
     await db.refresh(m)
     return MesaOut(
-        id=int(getattr(m, "id")),
+        id=getattr(m, "id"),
         numero=int(getattr(m, "numero")),
         capacidade=int(getattr(m, "capacidade")),
         status=str(getattr(m, "status")),
@@ -151,13 +151,13 @@ async def atualizar_status_mesa(
 
 @router.put("/{mesa_id}", response_model=MesaOut)
 async def atualizar_mesa(
-    mesa_id: int,
+    mesa_id: uuid.UUID,
     payload: MesaUpdate,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     user=Depends(get_current_admin_user),
 ):
-    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == int(mesa_id)))
+    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == mesa_id))
     m = res.scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Mesa não encontrada")
@@ -187,7 +187,7 @@ async def atualizar_mesa(
     await db.commit()
     await db.refresh(m)
     return MesaOut(
-        id=int(getattr(m, "id")),
+        id=getattr(m, "id"),
         numero=int(getattr(m, "numero")),
         capacidade=int(getattr(m, "capacidade")),
         status=str(getattr(m, "status")),
@@ -197,16 +197,16 @@ async def atualizar_mesa(
 
 @router.delete("/{mesa_id}")
 async def apagar_mesa(
-    mesa_id: int,
+    mesa_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     user=Depends(get_current_admin_user),
 ):
-    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == int(mesa_id)))
+    res = await db.execute(select(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == mesa_id))
     m = res.scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Mesa não encontrada")
 
-    await db.execute(delete(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == int(mesa_id)))
+    await db.execute(delete(Mesa).where(Mesa.tenant_id == tenant_id, Mesa.id == mesa_id))
     await db.commit()
     return {"ok": True}
